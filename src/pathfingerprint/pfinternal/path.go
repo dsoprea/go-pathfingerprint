@@ -1,0 +1,213 @@
+package pfinternal
+
+import (
+    "os"
+    "io"
+    "fmt"
+    "crypto/sha1"
+
+    "path/filepath"
+)
+
+const (
+    PathListBatchSize = 3
+    HashPartSize = 128
+)
+
+type Path struct {
+
+}
+
+func NewPath() *Path {
+    return &Path {}
+}
+
+func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
+    l := NewLogger()
+
+    entriesChannel := make(chan *os.FileInfo)
+    doneChannel := make(chan bool)
+
+    go func() {
+        f, err := os.Open(*path)
+        l.DieIf(err, "Could not open list path")
+
+        defer f.Close()
+
+        for {
+            entries, err := f.Readdir(PathListBatchSize)
+            if err == io.EOF {
+                break
+            } else if err != nil {
+                l.DieIf(err, "Could not list path children")
+            }
+
+            for i := range entries {
+                entriesChannel <- &entries[i]
+            }
+        }
+
+        doneChannel <- true
+    }()
+
+    return entriesChannel, doneChannel, nil
+}
+
+func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (string, error) {
+    l := NewLogger()
+
+    l.Debug("Generating hash for PATH.", "scanPath", *scanPath)
+
+    f, err := os.Open(*scanPath)
+    if err != nil {
+        newError := l.MergeAndLogError(err, "Could not open scan-path", "scanPath", *scanPath)
+        return "", newError
+    }
+
+    f.Close()
+
+    if existingCatalog != nil {
+        err := existingCatalog.Open()
+        if err != nil {
+            newError := l.MergeAndLogError(err, "Could not open catalog")
+            return "", newError
+        }
+    }
+
+    p := NewPath()
+    entriesChannel, doneChannel, err := p.List(scanPath)
+    if err != nil {
+        newError := l.MergeAndLogError(err, "Could not list children in path", "scanPath", *scanPath)
+        return "", newError
+    }
+
+    done := false
+    h := sha1.New()
+
+    for done == false {
+        select {
+            case entry := <-entriesChannel:
+                var childHash string = ""
+
+                filename := (*entry).Name()
+                isDir := (*entry).IsDir()
+
+                childPath := filepath.Join(*scanPath, filename)
+
+                if isDir == true {
+                    var bc *Catalog
+
+                    if existingCatalog != nil {
+                        bc, err = existingCatalog.BranchCatalog(&filename)
+                        if err != nil {
+                            newError := l.MergeAndLogError(err, "Could not branch catalog", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "scanPath", childPath)
+                            return "", newError
+                        }
+                    }
+
+                    childHash, err = self.GeneratePathHash(&childPath, bc)
+                    if err != nil {
+                        newError := l.MergeAndLogError(err, "Could not generate PATH hash", "childPath", childPath, "catalogFilepath", *bc.GetCatalogFilepath())
+                        return "", newError
+                    }
+                } else {
+                    var lr *LookupResult
+
+                    s, err := os.Stat(childPath)
+                    if err != nil {
+                        newError := l.MergeAndLogError(err, "Could not stat child file", "childPath", childPath)
+                        return "", newError
+                    }
+
+                    mtime := s.ModTime().Unix()
+
+                    if existingCatalog != nil {
+                        lr, err = existingCatalog.Lookup(&filename)
+                        if err != nil {
+                            newError := l.MergeAndLogError(err, "Could not lookup filename hash", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "filename", filename, "mtime", mtime)
+                            return "", newError
+                        } else if lr.WasFound == false || lr.entry.mtime != mtime {
+                            childHash = ""
+                        } else {
+                            childHash = lr.entry.hash
+                        }
+                    }
+
+                    if childHash == "" {
+                        childHash, err = self.GenerateFileHash(&childPath)
+                        if err != nil {
+                            newError := l.MergeAndLogError(err, "Could not generate FILE hash", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "childPath", childPath)
+                            return "", newError
+                        }
+                    }
+
+                    if existingCatalog != nil {
+                        err = existingCatalog.Update(lr, mtime, &childHash)
+                        if err != nil {
+                            newError := l.MergeAndLogError(err, "Could not update catalog", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "childPath", childPath)
+                            return "", newError
+                        }
+                    }
+                }
+
+                io.WriteString(h, childPath)
+                io.WriteString(h, "\000")
+                io.WriteString(h, childHash)
+                io.WriteString(h, "\000")
+
+            case done = <-doneChannel:
+                break
+        }
+    }
+
+    if existingCatalog != nil {
+        existingCatalog.PruneOld()
+    }
+
+    err = existingCatalog.Close()
+    if err != nil {
+        newError := l.MergeAndLogError(err, "Could not close catalog")
+        return "", newError
+    }
+
+// TODO(dustin): Replace the old catalog with the new one.
+
+    hash := fmt.Sprintf("%x", h.Sum(nil))
+    l.Debug("Calculated PATH hash.", "hash", hash, "scanPath", *scanPath)
+
+    return hash, nil
+}
+
+func (self *Path) GenerateFileHash(filepath *string) (string, error) {
+    l := NewLogger()
+
+    l.Debug("Generating hash for FILEPATH.", "filepath", *filepath)
+
+    f, err := os.Open(*filepath)
+    if err != nil {
+        newError := l.MergeAndLogError(err, "Could not open filepath", "filepath", *filepath)
+        return "", newError
+    }
+
+    defer f.Close()
+
+    h := sha1.New()
+    part := make([]byte, HashPartSize)
+
+    for {
+        _, err := f.Read(part)
+        if err == io.EOF {
+            break
+        } else if err != nil {
+            newError := l.MergeAndLogError(err, "Could not read file part for hash", "filepath", *filepath)
+            return "", newError
+        }
+
+        h.Write(part)
+    }
+
+    hash := fmt.Sprintf("%x", h.Sum(nil))
+    l.Debug("Calculated FILE hash.", "hash", hash, "filepath", *filepath)
+
+    return hash, nil
+}
