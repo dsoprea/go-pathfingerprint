@@ -1,23 +1,25 @@
-GOPATH=${PWD}
+export GOPATH=${PWD}
+
 INSTALL_PATH=/usr/local/bin
-PACKAGE_PATH=src/pathfingerprint
+BUILD_PACKAGES=pathfingerprint/pfmain
+PFINTERNAL_SOURCEFILES=src/pathfingerprint/pfinternal/*.go
+PFMAIN_SOURCEFILES=src/pathfingerprint/pfmain/*.go
+SOURCEFILES=${PFINTERNAL_SOURCEFILES} ${PFMAIN_SOURCEFILES}
+TARGET_BINARY_FILEPATH=${INSTALL_PATH}/pathfingerprint
 
-PFMAIN_PATH=${PACKAGE_PATH}/pfmain
-PFINTERNAL_PATH=${PACKAGE_PATH}/pfinternal
+all: bin/pfmain
 
-all: pathfingerprint
+.PHONY: all clean install
 
 clean:
-	rm -fr pkg/* bin/* 
-	rm -fr src/code.google.com src/github.com src/gopkg.in
+	rm -f ${TARGET_BINARY_FILEPATH}
 
-	rm -f ${INSTALL_PATH}/pathfingerprint
+	rm -fr bin pkg 
+	rm -fr src/gopkg.in src/code.google.com src/github.com
 
-pathfingerprint: ${PFMAIN_PATH}/*.go ${PFINTERNAL_PATH}/*.go
-	go get pathfingerprint/pfmain
-	go build pathfingerprint/pfmain
+bin/pfmain: ${SOURCEFILES}
+	go get ${BUILD_PACKAGES}
+	go install ${BUILD_PACKAGES}
 
-	rm pfmain
-
-install: pathfingerprint
-	install -m 755 bin/pfmain ${INSTALL_PATH}/pathfingerprint
+install: bin/pfmain
+	install -m 755 bin/pfmain ${TARGET_BINARY_FILEPATH}
