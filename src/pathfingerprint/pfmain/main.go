@@ -23,7 +23,7 @@ func main() {
 // TODO(dustin): Still debugging argument parsing (this interferes with 
 //               mandatory arguments).
     var doProfile bool = false
-    var hashAlgorithm string = "sha1"
+    var hashAlgorithm string = pfinternal.Sha1Algorithm
     var allowUpdates = true
     var c *pfinternal.Catalog
     var err error
