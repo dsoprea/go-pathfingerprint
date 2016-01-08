@@ -24,6 +24,9 @@ func main() {
 //               mandatory arguments).
     var doProfile bool = false
     var hashAlgorithm string = "sha1"
+    var allowUpdates = true
+    var c *pfinternal.Catalog
+    var err error
 
     l := pfinternal.NewLogger()
 
@@ -38,7 +41,7 @@ func main() {
     catalogPath := os.Args[2]
 
     if doProfile {
-        fmt.Println("Profiling enabled.")
+        l.Info("Profiling enabled.")
 
         f, err := os.Create(ProfilerOutputFilename)
         if err != nil {
@@ -51,15 +54,19 @@ func main() {
 
     p := pfinternal.NewPath(&hashAlgorithm)
 
-    c, err := pfinternal.NewCatalog(&catalogPath, &scanPath, true, &hashAlgorithm)
+    if allowUpdates == false {
+        l.Info("Catalog will not take any adjustments.")
+    }
+
+    c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm)
     if err != nil {
-        fmt.Printf("Could not open catalog: %s\n", err.Error())
+        l.Error("Could not open catalog.", "error", err.Error())
         os.Exit(1)
     }
 
     hash, err := p.GeneratePathHash(&scanPath, c)
     if err != nil {
-        fmt.Printf("Could not generate hash: %s\n", err.Error())
+        l.Error("Could not generate hash.", "error", err.Error())
         os.Exit(2)
     }
 
