@@ -11,7 +11,6 @@ import (
 
 const (
     PathListBatchSize = 3
-    HashPartSize = 128
 )
 
 type Path struct {
@@ -215,7 +214,7 @@ func (self *Path) GenerateFileHash(filepath *string) (string, error) {
         return "", errorNew
     }
 
-    part := make([]byte, HashPartSize)
+    part := make([]byte, h.BlockSize() * 2)
 
     for {
         _, err := f.Read(part)
