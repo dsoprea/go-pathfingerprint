@@ -6,7 +6,7 @@ import (
     
     "runtime/pprof"
 
-    "code.google.com/p/getopt"
+    "github.com/pborman/getopt"
 
     "pathfingerprint/pfinternal"
 )
@@ -23,6 +23,7 @@ func main() {
 // TODO(dustin): Still debugging argument parsing (this interferes with 
 //               mandatory arguments).
     var doProfile bool = false
+    var hashAlgorithm string = "sha1"
 
     l := pfinternal.NewLogger()
 
@@ -48,9 +49,9 @@ func main() {
         defer pprof.StopCPUProfile()
     }
 
-    p := pfinternal.NewPath()
+    p := pfinternal.NewPath(&hashAlgorithm)
 
-    c, err := pfinternal.NewCatalog(&catalogPath, &scanPath, true)
+    c, err := pfinternal.NewCatalog(&catalogPath, &scanPath, true, &hashAlgorithm)
     if err != nil {
         fmt.Printf("Could not open catalog: %s\n", err.Error())
         os.Exit(1)

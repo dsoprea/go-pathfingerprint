@@ -7,8 +7,9 @@ import (
     "errors"
     "time"
     "strings"
+    "hash"
+    "strconv"
 
-    "crypto/sha1"
     "database/sql"
 
     _ "github.com/mattn/go-sqlite3"
@@ -43,9 +44,10 @@ type Catalog struct {
     catalogFilepath *string
     db *sql.DB
     nowEpoch int64
+    hashAlgorithm *string
 }
 
-func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool) (*Catalog, error) {
+func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string) (*Catalog, error) {
     l := NewLogger()
 
     err := os.MkdirAll(*catalogPath, PathCreationMode)
@@ -54,7 +56,13 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool) (*Cat
         return nil, errorNew
     }
 
-    catalogFilename := fmt.Sprintf("%x", sha1.Sum([]byte(*scanPath)))
+    h, err := getHashObject(hashAlgorithm)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not get hash object (new-catalog)")
+        return nil, errorNew
+    }
+
+    catalogFilename := fmt.Sprintf("%x", h.Sum([]byte(*scanPath)))
     catalogFilepath := path.Join(*catalogPath, catalogFilename)
     nowEpoch := time.Now().Unix()
 
@@ -65,7 +73,8 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool) (*Cat
             relScanPath: nil, 
             catalogFilename: &catalogFilename, 
             catalogFilepath: &catalogFilepath,
-            nowEpoch: nowEpoch }
+            nowEpoch: nowEpoch,
+            hashAlgorithm: hashAlgorithm }
 
     return &c, nil
 }
@@ -78,7 +87,20 @@ func (self *Catalog) GetCatalogFilepath () *string {
     return self.catalogFilepath
 }
 
+func (self *Catalog) getHashObject () (hash.Hash, error) {
+    l := NewLogger()
+    
+    h, err := getHashObject(self.hashAlgorithm)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not get hash object (catalog)", "hashAlgorithm", *self.hashAlgorithm)
+        return nil, errorNew
+    }
+
+    return h, nil
+}
+
 func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
+    l := NewLogger()
     scanPath := path.Join(*self.scanPath, *childPathName)
 
     var relScanPath string
@@ -88,17 +110,24 @@ func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
         relScanPath = path.Join(*self.relScanPath, *childPathName)
     }
 
-    catalogFilename := fmt.Sprintf("%x", sha1.Sum([]byte(scanPath)))
+    h, err := self.getHashObject()
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not get hash object (branch-catalog)")
+        return nil, errorNew
+    }
+
+    catalogFilename := fmt.Sprintf("%x", h.Sum([]byte(scanPath)))
     catalogFilepath := path.Join(*self.catalogPath, catalogFilename)
 
-    c := Catalog{ 
+    c := Catalog { 
             catalogPath: self.catalogPath, 
             scanPath: &scanPath, 
             allowUpdates: self.allowUpdates,
             relScanPath: &relScanPath, 
             catalogFilename: &catalogFilename, 
             catalogFilepath: &catalogFilepath,
-            nowEpoch: self.nowEpoch }
+            nowEpoch: self.nowEpoch,
+            hashAlgorithm: self.hashAlgorithm }
 
     return &c, nil
 }
@@ -136,11 +165,17 @@ func (self *Catalog) Open () error {
 */
     // Make sure the table exists.
 
+    h, err := self.getHashObject()
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not get hash object (catalog-open)")
+        return errorNew
+    }
+
     query = 
         "CREATE TABLE `catalog_entries` (" +
             "`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
             "`filename` VARCHAR(255) NOT NULL, " +
-            "`sha1` VARCHAR(40) NOT NULL, " +
+            "`hash` VARCHAR(" + strconv.Itoa(h.Size()) + ") NOT NULL, " +
             "`mtime_epoch` INTEGER UNSIGNED NOT NULL, " +
             "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, " +
             "CONSTRAINT `filename_idx` UNIQUE (`filename`)" +
@@ -198,7 +233,7 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
     query = 
         "SELECT " +
             "`ce`.`catalog_entry_id`, " +
-            "`ce`.`sha1`, " +
+            "`ce`.`hash`, " +
             "`ce`.`mtime_epoch` " +
         "FROM " +
             "`catalog_entries` `ce` " +
@@ -293,7 +328,7 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
     return &lr, nil
 }
 
-func (self *Catalog) Update (lr *LookupResult, mtime int64, sha1 *string) error {
+func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error {
     var query string
 
     l := NewLogger()
@@ -309,7 +344,7 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, sha1 *string) error 
     }
 
     if lr.WasFound == true {
-        l.Debug("Updating entry", "filename", *lr.filename, "id", lr.entry.id, "mtime", lr.entry.mtime, "sha1", lr.entry.hash)
+        l.Debug("Updating entry", "filename", *lr.filename, "id", lr.entry.id, "mtime", lr.entry.mtime, "hash", lr.entry.hash)
 
 // TODO(dustin): Finish debugging the alias syntax.
 /*
@@ -317,7 +352,7 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, sha1 *string) error 
             "UPDATE " +
                 "`catalog_entries` AS `ce` " +
             "SET " +
-                "`ce`.`sha1` = ?, " +
+                "`ce`.`hash` = ?, " +
                 "`ce`.`mtime_epoch` = ? " +
             "WHERE " +
                 "`ce`.`catalog_entry_id` = ?"
@@ -326,7 +361,7 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, sha1 *string) error 
             "UPDATE " +
                 "catalog_entries " +
             "SET " +
-                "sha1 = ?, " +
+                "hash = ?, " +
                 "mtime_epoch = ? " +
             "WHERE " +
                 "catalog_entry_id = ?"
@@ -337,7 +372,7 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, sha1 *string) error 
             return errorNew
         }
 
-        r, err := stmt.Exec(sha1, mtime, lr.entry.id)
+        r, err := stmt.Exec(hash, mtime, lr.entry.id)
         if err != nil {
             errorNew := l.MergeAndLogError(err, "Could not execute entry-update query")
             return errorNew
@@ -357,11 +392,11 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, sha1 *string) error 
     } else {
         // The filename wasn't in the catalog. Add it.
 
-        l.Debug("Inserting entry", "filename", *lr.filename, "mtime", mtime, "sha1", *sha1, "last_check_epoch", self.nowEpoch)
+        l.Debug("Inserting entry", "filename", *lr.filename, "mtime", mtime, "hash", *hash, "last_check_epoch", self.nowEpoch)
 
         query = 
             "INSERT INTO `catalog_entries` " +
-                "(`filename`, `sha1`, `mtime_epoch`, `last_check_epoch`) " +
+                "(`filename`, `hash`, `mtime_epoch`, `last_check_epoch`) " +
             "VALUES " +
                 "(?, ?, ?, ?)"
 
@@ -371,7 +406,7 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, sha1 *string) error 
             return errorNew
         }
 
-        _, err = stmt.Exec(lr.filename, sha1, mtime, self.nowEpoch)
+        _, err = stmt.Exec(lr.filename, hash, mtime, self.nowEpoch)
         if err != nil {
             errorNew := l.MergeAndLogError(err, "Could not execute entry-insert query")
             return errorNew

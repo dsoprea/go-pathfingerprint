@@ -4,7 +4,7 @@ import (
     "os"
     "io"
     "fmt"
-    "crypto/sha1"
+    "hash"
 
     "path/filepath"
 )
@@ -15,11 +15,14 @@ const (
 )
 
 type Path struct {
-
+    hashAlgorithm *string
 }
 
-func NewPath() *Path {
-    return &Path {}
+func NewPath(hashAlgorithm *string) *Path {
+    p := Path {
+            hashAlgorithm: hashAlgorithm }
+
+    return &p
 }
 
 func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
@@ -53,6 +56,18 @@ func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
     return entriesChannel, doneChannel, nil
 }
 
+func (self *Path) getHashObject () (hash.Hash, error) {
+    l := NewLogger()
+
+    h, err := getHashObject(self.hashAlgorithm)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not get hash object (path)", "hashAlgorithm", *self.hashAlgorithm)
+        return nil, errorNew
+    }
+
+    return h, nil
+}
+
 func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (string, error) {
     l := NewLogger()
 
@@ -74,15 +89,20 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
         }
     }
 
-    p := NewPath()
+    p := NewPath(self.hashAlgorithm)
     entriesChannel, doneChannel, err := p.List(scanPath)
     if err != nil {
         newError := l.MergeAndLogError(err, "Could not list children in path", "scanPath", *scanPath)
         return "", newError
     }
 
+    h, err := self.getHashObject()
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not get hash object (generate-path-hash)")
+        return "", errorNew
+    }
+
     done := false
-    h := sha1.New()
 
     for done == false {
         select {
@@ -191,7 +211,12 @@ func (self *Path) GenerateFileHash(filepath *string) (string, error) {
 
     defer f.Close()
 
-    h := sha1.New()
+    h, err := self.getHashObject()
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not get hash object (generate-file-hash)")
+        return "", errorNew
+    }
+
     part := make([]byte, HashPartSize)
 
     for {
