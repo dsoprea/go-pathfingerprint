@@ -62,8 +62,11 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
         return nil, errorNew
     }
 
-    catalogFilename := fmt.Sprintf("%x", h.Sum([]byte(*scanPath)))
+    h.Write([]byte(*scanPath))
+
+    catalogFilename := fmt.Sprintf("%x", h.Sum(nil))
     catalogFilepath := path.Join(*catalogPath, catalogFilename)
+
     nowEpoch := time.Now().Unix()
 
     c := Catalog { 
@@ -116,7 +119,9 @@ func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
         return nil, errorNew
     }
 
-    catalogFilename := fmt.Sprintf("%x", h.Sum([]byte(scanPath)))
+    h.Write([]byte(scanPath))
+
+    catalogFilename := fmt.Sprintf("%x", h.Sum(nil))
     catalogFilepath := path.Join(*self.catalogPath, catalogFilename)
 
     c := Catalog { 
@@ -175,7 +180,7 @@ func (self *Catalog) Open () error {
         "CREATE TABLE `catalog_entries` (" +
             "`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
             "`filename` VARCHAR(255) NOT NULL, " +
-            "`hash` VARCHAR(" + strconv.Itoa(h.Size()) + ") NOT NULL, " +
+            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NOT NULL, " +
             "`mtime_epoch` INTEGER UNSIGNED NOT NULL, " +
             "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, " +
             "CONSTRAINT `filename_idx` UNIQUE (`filename`)" +

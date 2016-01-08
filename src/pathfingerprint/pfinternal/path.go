@@ -190,8 +190,6 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
         return "", newError
     }
 
-// TODO(dustin): Replace the old catalog with the new one.
-
     hash := fmt.Sprintf("%x", h.Sum(nil))
     l.Debug("Calculated PATH hash.", "hash", hash, "scanPath", *scanPath)
 
