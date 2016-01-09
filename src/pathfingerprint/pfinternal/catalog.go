@@ -223,6 +223,8 @@ func (self *Catalog) Close () error {
         return errorNew
     }
 */
+
+    self.db.Close()
     self.db = nil
 
     return nil

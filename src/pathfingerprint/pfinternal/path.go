@@ -86,6 +86,20 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
             newError := l.MergeAndLogError(err, "Could not open catalog")
             return "", newError
         }
+
+        closeCatalog := func () {
+            l.Debug("Closing catalog.", "scanPath", *scanPath)
+
+            existingCatalog.PruneOld()
+
+            err = existingCatalog.Close()
+            if err != nil {
+                l.MergeAndLogError(err, "Could not close catalog")
+                return
+            }
+        }
+
+        defer closeCatalog()
     }
 
     p := NewPath(self.hashAlgorithm)
@@ -179,16 +193,6 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
         }
     }
 
-    if existingCatalog != nil {
-        existingCatalog.PruneOld()
-    }
-
-    err = existingCatalog.Close()
-    if err != nil {
-        newError := l.MergeAndLogError(err, "Could not close catalog")
-        return "", newError
-    }
-
     hash := fmt.Sprintf("%x", h.Sum(nil))
     l.Debug("Calculated PATH hash.", "hash", hash, "scanPath", *scanPath)
 
@@ -206,7 +210,13 @@ func (self *Path) GenerateFileHash(filepath *string) (string, error) {
         return "", newError
     }
 
-    defer f.Close()
+    closeFile := func () {
+        l.Debug("Closing file (generated hash).", "filepath", *filepath)
+
+        f.Close()
+    }
+
+    defer closeFile()
 
     h, err := self.getHashObject()
     if err != nil {

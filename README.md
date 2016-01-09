@@ -31,3 +31,14 @@ Implementation:
 - A SQLite database is used to index every directory.
 - We cache file hashes but not path hashes.
 - We determine if a file hash changes based on modified-times.
+
+## Dependencies
+
+- Go 1.5+
+- Mercurial
+
+## Remaining Tasks
+
+- Allow arbitrary choice of hashes
+- Allow to disable updates via command-line
+- Add a reporting mechanism to either print or record deltas
