@@ -18,6 +18,10 @@ import (
 const (
     PathCreationMode = 0755
     DbType = "sqlite3"
+
+    CatalogEntryInsert = 1
+    CatalogEntryDelete = 2
+    CatalogEntryUpdate = 4
 )
 
 var ErrNoHash = errors.New("no hash recorded for the filename")
@@ -35,6 +39,11 @@ type LookupResult struct {
     entry *catalogEntry
 }
 
+type CatalogChange struct {
+    ChangeType uint8
+    RelFilepath *string
+}
+
 type Catalog struct {
     catalogPath *string
     scanPath *string
@@ -45,10 +54,11 @@ type Catalog struct {
     db *sql.DB
     nowEpoch int64
     hashAlgorithm *string
+    reportingChannel chan<- *CatalogChange
 }
 
-func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string) (*Catalog, error) {
-    l := NewLogger()
+func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string, reportingChannel chan<- *CatalogChange) (*Catalog, error) {
+    l := NewLogger("catalog")
 
     err := os.MkdirAll(*catalogPath, PathCreationMode)
     if err != nil {
@@ -77,7 +87,8 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
             catalogFilename: &catalogFilename, 
             catalogFilepath: &catalogFilepath,
             nowEpoch: nowEpoch,
-            hashAlgorithm: hashAlgorithm }
+            hashAlgorithm: hashAlgorithm,
+            reportingChannel: reportingChannel }
 
     return &c, nil
 }
@@ -91,7 +102,7 @@ func (self *Catalog) GetCatalogFilepath () *string {
 }
 
 func (self *Catalog) getHashObject () (hash.Hash, error) {
-    l := NewLogger()
+    l := NewLogger("catalog")
     
     h, err := getHashObject(self.hashAlgorithm)
     if err != nil {
@@ -103,7 +114,7 @@ func (self *Catalog) getHashObject () (hash.Hash, error) {
 }
 
 func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
-    l := NewLogger()
+    l := NewLogger("catalog")
     scanPath := path.Join(*self.scanPath, *childPathName)
 
     var relScanPath string
@@ -132,7 +143,8 @@ func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
             catalogFilename: &catalogFilename, 
             catalogFilepath: &catalogFilepath,
             nowEpoch: self.nowEpoch,
-            hashAlgorithm: self.hashAlgorithm }
+            hashAlgorithm: self.hashAlgorithm,
+            reportingChannel: self.reportingChannel }
 
     return &c, nil
 }
@@ -142,7 +154,7 @@ func (self *Catalog) Open () error {
     var err error
     var db *sql.DB
 
-    l := NewLogger()
+    l := NewLogger("catalog")
 
     l.Debug("Opening database.", "catalogFilepath", *self.catalogFilepath)
 
@@ -207,7 +219,7 @@ func (self *Catalog) Close () error {
 //    var query string
 //    var err error
 
-    l := NewLogger()
+    l := NewLogger("catalog")
 
     l.Debug("Closing database.", "catalogFilepath", *self.catalogFilepath)
 
@@ -235,7 +247,7 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
     var err error
     var lr LookupResult
 
-    l := NewLogger()
+    l := NewLogger("catalog")
 
     query = 
         "SELECT " +
@@ -335,10 +347,25 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
     return &lr, nil
 }
 
+func (self *Catalog) getFilePath (filename *string) string {
+    relFilepath := path.Join(*self.scanPath, *filename)
+    return relFilepath
+}
+
 func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error {
     var query string
 
-    l := NewLogger()
+    l := NewLogger("catalog")
+
+    if self.reportingChannel != nil {
+        relFilepath := self.getFilePath(lr.filename)
+
+        if lr.WasFound == true {
+            self.reportingChannel <- &CatalogChange { ChangeType: CatalogEntryUpdate, RelFilepath: &relFilepath }
+        } else {
+            self.reportingChannel <- &CatalogChange { ChangeType: CatalogEntryInsert, RelFilepath: &relFilepath }
+        }
+    }
 
     if self.allowUpdates == false {
         // We were told to not make any changes.
@@ -427,7 +454,46 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error 
 func (self *Catalog) PruneOld () error {
     var query string
 
-    l := NewLogger()
+    l := NewLogger("catalog")
+
+    if self.reportingChannel != nil {
+        // If we're reporting changes, then enumerate the entries to be delete 
+        // and push them up.
+
+        query = 
+            "SELECT " +
+                "`ce`.`filename` " +
+            "FROM " +
+                "`catalog_entries` `ce` " +
+            "WHERE " +
+                "`last_check_epoch` < ?"
+
+        stmt, err := self.db.Prepare(query)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not prepare pruned-entries query")
+            return errorNew
+        }
+
+        rows, err := stmt.Query(self.nowEpoch)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not execute pruned-entries query")
+            return errorNew
+        }
+
+        for rows.Next() {
+            var filename string
+            err = rows.Scan(&filename)
+            if err != nil {
+                errorNew := l.MergeAndLogError(err, "Could not parse filename from pruned-entries query")
+                return errorNew
+            }
+
+            relFilepath := self.getFilePath(&filename)
+            self.reportingChannel <- &CatalogChange { ChangeType: CatalogEntryDelete, RelFilepath: &relFilepath }
+        }
+
+        rows.Close()
+    }
 
     if self.allowUpdates == false {
         return nil

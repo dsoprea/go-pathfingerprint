@@ -3,29 +3,45 @@ package pfinternal
 import (
     "fmt"
     "errors"
+    "os"
+    "strconv"
 
     log "gopkg.in/inconshreveable/log15.v2"
-)
-
-const (
-    ShowDebugLogging = false
+    "github.com/mattn/go-colorable"
 )
 
 type Logger struct {
     log *log.Logger
 }
 
-func NewLogger() *Logger {
-    l := log.New()
+func NewLogger(context string) *Logger {
+    l := log.New("context", context)
+
     return &Logger {log: &l}
 }
 
-func (self *Logger) Debug (message string, ctx ...interface{}) {
-// TODO(dustin): Finish figuring-out how to set the log-level to hide these.
+func (self *Logger) ConfigureRootLogger () {
+    screenHandler := log.StreamHandler(colorable.NewColorableStdout(), log.TerminalFormat())
 
-    if ShowDebugLogging == true {
-        (*self.log).Debug(message, ctx...)
+    logLevel := log.LvlInfo
+
+    value, found := os.LookupEnv("PF_DEBUG")
+    if found == true {
+        flag, err := strconv.ParseBool(value)
+        if err != nil {
+            fmt.Println("Debug value not valid (try '0' or '1').")
+            os.Exit(99)
+        } else if flag == true {
+            logLevel = log.LvlDebug
+        }
     }
+
+    filterHandler := log.LvlFilterHandler(logLevel, screenHandler)
+    log.Root().SetHandler(filterHandler)
+}
+
+func (self *Logger) Debug (message string, ctx ...interface{}) {
+    (*self.log).Debug(message, ctx...)
 }
 
 func (self *Logger) Info (message string, ctx ...interface{}) {

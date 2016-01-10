@@ -25,7 +25,7 @@ func NewPath(hashAlgorithm *string) *Path {
 }
 
 func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
-    l := NewLogger()
+    l := NewLogger("path")
 
     entriesChannel := make(chan *os.FileInfo)
     doneChannel := make(chan bool)
@@ -56,7 +56,7 @@ func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
 }
 
 func (self *Path) getHashObject () (hash.Hash, error) {
-    l := NewLogger()
+    l := NewLogger("path")
 
     h, err := getHashObject(self.hashAlgorithm)
     if err != nil {
@@ -68,7 +68,7 @@ func (self *Path) getHashObject () (hash.Hash, error) {
 }
 
 func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (string, error) {
-    l := NewLogger()
+    l := NewLogger("path")
 
     l.Debug("Generating hash for PATH.", "scanPath", *scanPath)
 
@@ -200,7 +200,7 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
 }
 
 func (self *Path) GenerateFileHash(filepath *string) (string, error) {
-    l := NewLogger()
+    l := NewLogger("path")
 
     l.Debug("Generating hash for FILEPATH.", "filepath", *filepath)
 

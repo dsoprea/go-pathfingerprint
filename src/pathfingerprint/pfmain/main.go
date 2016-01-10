@@ -28,7 +28,8 @@ func main() {
     var c *pfinternal.Catalog
     var err error
 
-    l := pfinternal.NewLogger()
+    l := pfinternal.NewLogger("pfmain")
+    l.ConfigureRootLogger()
 
     if opts.Parse(os.Args); opts.NArgs() < 2 {
         fmt.Println("Please provide at least a scan-path and a catalog-path.")
@@ -58,7 +59,17 @@ func main() {
         l.Info("Catalog will not take any adjustments.")
     }
 
-    c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm)
+    reportingChannel := make(chan *pfinternal.CatalogChange, 1000)
+    reportingQuit := make(chan bool)
+
+// TODO(dustin): Be able to configure this at the command-line.
+//    reportFilepath := "changes.txt"
+
+    go recordChanges(reportingChannel, reportingQuit)
+
+// TODO(dustin): !! Create a goroutine to monitor the reporting channel and print/record the results.
+
+    c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm, reportingChannel)
     if err != nil {
         l.Error("Could not open catalog.", "error", err.Error())
         os.Exit(1)
@@ -70,5 +81,24 @@ func main() {
         os.Exit(2)
     }
 
+    reportingQuit <- true
+
     fmt.Printf("%s\n", hash)
+}
+
+func recordChanges (reportingChannel <-chan *pfinternal.CatalogChange, reportingQuit <-chan bool) {
+    l := pfinternal.NewLogger("pfmain")
+    l.Debug("Reporter running.")
+
+    for {
+        select {
+            case change := <-reportingChannel:
+                l.Debug("Catalog change.", "ChangeType", change.ChangeType, "RelFilepath", *change.RelFilepath)
+// TODO(dustin): Record the data.
+
+            case <-reportingQuit:
+                l.Warn("Reporting terminating.")
+                return
+        }
+    }
 }
