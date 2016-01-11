@@ -3,54 +3,67 @@ package main
 import (
     "os"
     "fmt"
-    
     "runtime/pprof"
-
-    "github.com/pborman/getopt"
+    
+    flags "github.com/jessevdk/go-flags"
 
     "pathfingerprint/pfinternal"
 )
 
-const (
-    ProfilerOutputFilename = "manifest.prof"
-)
+type options struct {
+    ScanPath string         `short:"s" long:"scan-path" description:"Path to scan" required:"true"`
+    CatalogPath string      `short:"c" long:"catalog-path" description:"Path to host catalog (will be created if it doesn't exist)" required:"true"`
+    HashAlgorithm string    `short:"h" long:"algorithm" default:"sha1" description:"Hashing algorithm (sha1, sha256)"`
+    NoUpdates bool          `short:"n" long:"no-updates" default:"false" description:"Don't update the catalog (will also prevent reporting of deletions)"`
+    ReportFilename string   `short:"r" long:"report" default:"" description:"Write a report of changed files"`
+    ProfileFilename string  `short:"p" long:"profile" default:"" description:"Write performance profiling information"`
+    ShowDebugLogging bool   `short:"d" long:"debug-log" default:"false" description:"Show debug logging"`
+}
 
-//var doProfile = getopt.BoolLong("profile", 'p', "Enable profiling")
+func readOptions () *options {
+    o := options {}
 
-var opts = getopt.CommandLine
+    _, err := flags.Parse(&o)
+    if err != nil {
+        os.Exit(1)
+    }
+
+    return &o
+}
 
 func main() {
-// TODO(dustin): Still debugging argument parsing (this interferes with 
-//               mandatory arguments).
-    var doProfile bool = false
-    var hashAlgorithm string = pfinternal.Sha1Algorithm
-    var allowUpdates bool = true
+    var scanPath string
+    var catalogPath string
+    var hashAlgorithm string
+    var allowUpdates bool
+    var reportFilename string
+    var profileFilename string
 
-// TODO(dustin): Pass from the command-line.
-    var reportFilename string = "changes.txt"
+    o := readOptions()
+
+    scanPath = o.ScanPath
+    catalogPath = o.CatalogPath
+    hashAlgorithm = o.HashAlgorithm
+    allowUpdates = o.NoUpdates == false
+    reportFilename = o.ReportFilename
+    profileFilename = o.ProfileFilename
 
     var reportingDataChannel chan *pfinternal.CatalogChange = nil
     var reportingQuitChannel chan bool = nil
     var c *pfinternal.Catalog
     var err error
 
+    if o.ShowDebugLogging == true {
+        pfinternal.SetDebugLogging()
+    }
+
     l := pfinternal.NewLogger("pfmain")
     l.ConfigureRootLogger()
 
-    if opts.Parse(os.Args); opts.NArgs() < 2 {
-        fmt.Println("Please provide at least a scan-path and a catalog-path.")
-        os.Exit(1)
-    }
-
-    opts.Parse(opts.Args())
-
-    scanPath := os.Args[1]
-    catalogPath := os.Args[2]
-
-    if doProfile {
+    if profileFilename != "" {
         l.Info("Profiling enabled.")
 
-        f, err := os.Create(ProfilerOutputFilename)
+        f, err := os.Create(profileFilename)
         if err != nil {
             l.DieIf(err, "Could not create profiler profile.")
         }
@@ -60,10 +73,6 @@ func main() {
     }
 
     p := pfinternal.NewPath(&hashAlgorithm)
-
-    if allowUpdates == false {
-        l.Info("Catalog will not take any adjustments.")
-    }
 
     if reportFilename != "" {
         reportingDataChannel = make(chan *pfinternal.CatalogChange, 1000)
@@ -107,7 +116,7 @@ func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.C
     for {
         select {
             case change := <-reportingChannel:
-                l.Debug("Catalog change.", "ChangeType", change.ChangeType, "RelFilepath", *change.RelFilepath)
+                l.Debug("Catalog change.", "ChangeType", pfinternal.CatalogEntryUpdateTypes[change.ChangeType], "RelFilepath", *change.RelFilepath)
                 f.WriteString(pfinternal.CatalogEntryUpdateTypes[change.ChangeType])
                 f.WriteString(" ")
                 f.WriteString(*change.RelFilepath)
