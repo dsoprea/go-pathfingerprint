@@ -20,12 +20,18 @@ const (
     DbType = "sqlite3"
 
     CatalogEntryInsert = 1
-    CatalogEntryDelete = 2
-    CatalogEntryUpdate = 4
+    CatalogEntryUpdate = 2
+    CatalogEntryDelete = 4
 )
 
 var ErrNoHash = errors.New("no hash recorded for the filename")
 var ErrFileChanged = errors.New("mtime for filename does not match")
+
+var CatalogEntryUpdateTypes = 
+    map[uint8]string {
+        CatalogEntryInsert: "insert",
+        CatalogEntryUpdate: "update",
+        CatalogEntryDelete: "delete" }
 
 type catalogEntry struct {
     id int
@@ -357,6 +363,12 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error 
 
     l := NewLogger("catalog")
 
+    if lr.WasFound == true && lr.entry.mtime == mtime {
+        // The entry already existed and the mtime matched.
+
+        return nil
+    }
+
     if self.reportingChannel != nil {
         relFilepath := self.getFilePath(lr.filename)
 
@@ -369,10 +381,6 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error 
 
     if self.allowUpdates == false {
         // We were told to not make any changes.
-
-        return nil
-    } else if lr.WasFound == true && lr.entry.mtime == mtime {
-        // The entry already existed and the mtime matched.
 
         return nil
     }

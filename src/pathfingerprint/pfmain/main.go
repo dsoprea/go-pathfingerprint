@@ -24,7 +24,13 @@ func main() {
 //               mandatory arguments).
     var doProfile bool = false
     var hashAlgorithm string = pfinternal.Sha1Algorithm
-    var allowUpdates = true
+    var allowUpdates bool = true
+
+// TODO(dustin): Pass from the command-line.
+    var reportFilename string = "changes.txt"
+
+    var reportingDataChannel chan *pfinternal.CatalogChange = nil
+    var reportingQuitChannel chan bool = nil
     var c *pfinternal.Catalog
     var err error
 
@@ -59,17 +65,14 @@ func main() {
         l.Info("Catalog will not take any adjustments.")
     }
 
-    reportingChannel := make(chan *pfinternal.CatalogChange, 1000)
-    reportingQuit := make(chan bool)
+    if reportFilename != "" {
+        reportingDataChannel = make(chan *pfinternal.CatalogChange, 1000)
+        reportingQuitChannel = make(chan bool)
 
-// TODO(dustin): Be able to configure this at the command-line.
-//    reportFilepath := "changes.txt"
+        go recordChanges(reportFilename, reportingDataChannel, reportingQuitChannel)
+    }
 
-    go recordChanges(reportingChannel, reportingQuit)
-
-// TODO(dustin): !! Create a goroutine to monitor the reporting channel and print/record the results.
-
-    c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm, reportingChannel)
+    c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm, reportingDataChannel)
     if err != nil {
         l.Error("Could not open catalog.", "error", err.Error())
         os.Exit(1)
@@ -81,24 +84,38 @@ func main() {
         os.Exit(2)
     }
 
-    reportingQuit <- true
+    if reportFilename != "" {
+        reportingQuitChannel <- true
+    }
 
     fmt.Printf("%s\n", hash)
 }
 
-func recordChanges (reportingChannel <-chan *pfinternal.CatalogChange, reportingQuit <-chan bool) {
+func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.CatalogChange, reportingQuit <-chan bool) {
     l := pfinternal.NewLogger("pfmain")
+
+    f, err := os.Create(reportFilename)
+    if err != nil {
+        l.Error("Could not open report file.", "filename", reportFilename, "error", err.Error())
+        panic(err)
+    }
+
+    defer f.Close()
+
     l.Debug("Reporter running.")
 
     for {
         select {
             case change := <-reportingChannel:
                 l.Debug("Catalog change.", "ChangeType", change.ChangeType, "RelFilepath", *change.RelFilepath)
-// TODO(dustin): Record the data.
-
+                f.WriteString(pfinternal.CatalogEntryUpdateTypes[change.ChangeType])
+                f.WriteString(" ")
+                f.WriteString(*change.RelFilepath)
+                f.WriteString("\n")
             case <-reportingQuit:
-                l.Warn("Reporting terminating.")
+                l.Debug("Reporting terminating.")
                 return
+
         }
     }
 }
