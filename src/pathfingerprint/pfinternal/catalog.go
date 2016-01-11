@@ -66,6 +66,10 @@ type Catalog struct {
 func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string, reportingChannel chan<- *CatalogChange) (*Catalog, error) {
     l := NewLogger("catalog")
 
+    if allowUpdates == false {
+        l.Info("Catalog will not take any updates.")
+    }
+
     err := os.MkdirAll(*catalogPath, PathCreationMode)
     if err != nil {
         errorNew := l.MergeAndLogError(err, "Could not create catalog path", "catalogPath", *catalogPath)
@@ -84,6 +88,8 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
     catalogFilepath := path.Join(*catalogPath, catalogFilename)
 
     nowEpoch := time.Now().Unix()
+
+    l.Debug("Current time.", "nowEpoch", nowEpoch)
 
     c := Catalog { 
             catalogPath: catalogPath, 
@@ -120,8 +126,11 @@ func (self *Catalog) getHashObject () (hash.Hash, error) {
 }
 
 func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
+    var scanPath string
+
     l := NewLogger("catalog")
-    scanPath := path.Join(*self.scanPath, *childPathName)
+    
+    scanPath = path.Join(*self.scanPath, *childPathName)
 
     var relScanPath string
     if self.relScanPath == nil {
@@ -277,17 +286,24 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
         return nil, errorNew
     }
 
+    var relScanPathPhrase string
+    if self.relScanPath == nil {
+        relScanPathPhrase = ""
+    } else {
+        relScanPathPhrase = *self.relScanPath
+    }
+
     if rows.Next() == false {
         // We don't yet know about this file.
 
-        l.Debug("Filename not yet in catalog", "filename", *filename)
+        l.Debug("Filename not yet in catalog", "relScanPath", relScanPathPhrase, "filename", *filename)
 
         lr.WasFound = false
         lr.filename = filename
     } else {
         // We already know about this file.
 
-        l.Debug("Filename IS ALREADY in catalog", "filename", *filename)
+        l.Debug("Filename IS ALREADY in catalog", "relScanPath", relScanPathPhrase, "filename", *filename)
 
         var entry catalogEntry
 
@@ -339,7 +355,11 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
             if err != nil {
                 errorNew := l.MergeAndLogError(err, "Could not get the number of affected rows from the found-update query")
                 return nil, errorNew
-            } else if affected < 1 {
+            }
+
+            l.Debug("Epoch updated.", "id", entry.id, "affected", affected)
+
+            if affected < 1 {
                 errorNew := l.LogError("No rows were affected by the found-update query")
                 return nil, errorNew
             }
@@ -458,11 +478,18 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error 
     return nil
 }
 
-// Delete all records that haven't been touched in this run.
+// Delete all records that haven't been touched in this run (because all of the 
+// ones that match known files have been updated to a later timestamp than they 
+// had).
 func (self *Catalog) PruneOld () error {
     var query string
 
     l := NewLogger("catalog")
+
+    if self.allowUpdates == false {
+        l.Warning("Not checking for deletions since we're not allowed to make updates.")
+        return nil
+    }
 
     if self.reportingChannel != nil {
         // If we're reporting changes, then enumerate the entries to be delete 
@@ -474,7 +501,7 @@ func (self *Catalog) PruneOld () error {
             "FROM " +
                 "`catalog_entries` `ce` " +
             "WHERE " +
-                "`last_check_epoch` < ?"
+                "`ce`.`last_check_epoch` < ?"
 
         stmt, err := self.db.Prepare(query)
         if err != nil {
@@ -490,6 +517,7 @@ func (self *Catalog) PruneOld () error {
 
         for rows.Next() {
             var filename string
+
             err = rows.Scan(&filename)
             if err != nil {
                 errorNew := l.MergeAndLogError(err, "Could not parse filename from pruned-entries query")
@@ -497,6 +525,9 @@ func (self *Catalog) PruneOld () error {
             }
 
             relFilepath := self.getFilePath(&filename)
+
+            l.Debug("Reporting file as deleted.", "RelFilepath", relFilepath)
+
             self.reportingChannel <- &CatalogChange { ChangeType: CatalogEntryDelete, RelFilepath: &relFilepath }
         }
 
