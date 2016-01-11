@@ -194,7 +194,7 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
     }
 
     hash := fmt.Sprintf("%x", h.Sum(nil))
-    l.Debug("Calculated PATH hash.", "hash", hash, "scanPath", *scanPath)
+    l.Debug("Calculated PATH hash.", "scanPath", *scanPath, "hash", hash)
 
     return hash, nil
 }
