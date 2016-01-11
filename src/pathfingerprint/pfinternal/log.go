@@ -10,8 +10,14 @@ import (
     "github.com/mattn/go-colorable"
 )
 
+var showDebug bool = false
+
 type Logger struct {
     log *log.Logger
+}
+
+func SetDebugLogging () {
+    showDebug = true
 }
 
 func NewLogger(context string) *Logger {
@@ -25,14 +31,18 @@ func (self *Logger) ConfigureRootLogger () {
 
     logLevel := log.LvlInfo
 
-    value, found := os.LookupEnv("PF_DEBUG")
-    if found == true {
-        flag, err := strconv.ParseBool(value)
-        if err != nil {
-            fmt.Println("Debug value not valid (try '0' or '1').")
-            os.Exit(99)
-        } else if flag == true {
-            logLevel = log.LvlDebug
+    if showDebug == true {
+        logLevel = log.LvlDebug
+    } else {
+        value, found := os.LookupEnv("PF_DEBUG")
+        if found == true {
+            flag, err := strconv.ParseBool(value)
+            if err != nil {
+                fmt.Println("Debug value not valid (try '0' or '1').")
+                os.Exit(99)
+            } else if flag == true {
+                logLevel = log.LvlDebug
+            }
         }
     }
 
@@ -48,7 +58,7 @@ func (self *Logger) Info (message string, ctx ...interface{}) {
     (*self.log).Info(message, ctx...)
 }
 
-func (self *Logger) Warn (message string, ctx ...interface{}) {
+func (self *Logger) Warning (message string, ctx ...interface{}) {
     (*self.log).Warn(message, ctx...)
 }
 
