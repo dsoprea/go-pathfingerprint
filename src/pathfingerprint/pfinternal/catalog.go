@@ -374,7 +374,14 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
 }
 
 func (self *Catalog) getFilePath (filename *string) string {
-    relFilepath := path.Join(*self.scanPath, *filename)
+    var relFilepath string
+
+    if self.relScanPath != nil {
+        relFilepath = path.Join(*self.relScanPath, *filename)
+    } else {
+        relFilepath = *filename
+    }
+
     return relFilepath
 }
 
