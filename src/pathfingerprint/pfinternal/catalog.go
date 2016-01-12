@@ -18,20 +18,10 @@ import (
 const (
     PathCreationMode = 0755
     DbType = "sqlite3"
-
-    CatalogEntryInsert = 1
-    CatalogEntryUpdate = 2
-    CatalogEntryDelete = 4
 )
 
 var ErrNoHash = errors.New("no hash recorded for the filename")
 var ErrFileChanged = errors.New("mtime for filename does not match")
-
-var CatalogEntryUpdateTypes = 
-    map[uint8]string {
-        CatalogEntryInsert: "insert",
-        CatalogEntryUpdate: "update",
-        CatalogEntryDelete: "delete" }
 
 type catalogEntry struct {
     id int
@@ -45,11 +35,6 @@ type LookupResult struct {
     entry *catalogEntry
 }
 
-type CatalogChange struct {
-    ChangeType uint8
-    RelFilepath *string
-}
-
 type Catalog struct {
     catalogPath *string
     scanPath *string
@@ -58,12 +43,13 @@ type Catalog struct {
     catalogFilename *string
     catalogFilepath *string
     db *sql.DB
+    nowTime time.Time
     nowEpoch int64
     hashAlgorithm *string
-    reportingChannel chan<- *CatalogChange
+    reportingChannel chan<- *ChangeEvent
 }
 
-func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string, reportingChannel chan<- *CatalogChange) (*Catalog, error) {
+func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string, reportingChannel chan<- *ChangeEvent) (*Catalog, error) {
     l := NewLogger("catalog")
 
     if allowUpdates == false {
@@ -87,7 +73,8 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
     catalogFilename := fmt.Sprintf("%x", h.Sum(nil))
     catalogFilepath := path.Join(*catalogPath, catalogFilename)
 
-    nowEpoch := time.Now().Unix()
+    nowTime := time.Now()
+    nowEpoch := nowTime.Unix()
 
     l.Debug("Current time.", "nowEpoch", nowEpoch)
 
@@ -98,6 +85,7 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
             relScanPath: nil, 
             catalogFilename: &catalogFilename, 
             catalogFilepath: &catalogFilepath,
+            nowTime: nowTime,
             nowEpoch: nowEpoch,
             hashAlgorithm: hashAlgorithm,
             reportingChannel: reportingChannel }
@@ -177,6 +165,22 @@ func (self *Catalog) Open () error {
         return errors.New("Connection already opened.")        
     }
 
+    // If the catalog doesn't already exist, emit a path-create event.
+
+    f, err := os.Open(*self.catalogFilepath)
+    if err != nil {
+        var relScanPath string
+        if self.relScanPath == nil {
+            relScanPath = ""
+        } else {
+            relScanPath = *self.relScanPath
+        }
+
+        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeCreate, RelPath: &relScanPath }
+    } else {
+        f.Close()
+    }
+
     // Open the DB.
 
     db, err = sql.Open(DbType, *self.catalogFilepath)
@@ -213,19 +217,33 @@ func (self *Catalog) Open () error {
             "CONSTRAINT `filename_idx` UNIQUE (`filename`)" +
         ")"
 
-    _, err = db.Exec(query)
+    err = self.createTable ("catalog_entries", &query)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not create table")
+        return errorNew
+    }
+
+// TODO(dustin): !! Create a path_info table that we can store the last known 
+//                  hash of that path in (so we can emit path-change events)
+//                  and be able to write those to the report.
+
+    self.db = db
+
+    return nil
+}
+
+func (self *Catalog) createTable (tableName string, tableQuery *string) error {
+    _, err = db.Exec(tableQuery)
 
     if err != nil {
         // Check for something like this: table `catalog` already exists
         if strings.HasSuffix(err.Error(), "already exists") {
-            l.Debug("Catalog table already exists.", "catalogFilepath", *self.catalogFilepath)
+            l.Debug("Table already exists.", "Name", *tableName)
         } else {
             errorNew := l.MergeAndLogError(err, "Could not create table")
             return errorNew
         }
     }
-
-    self.db = db
 
     return nil
 }
@@ -253,6 +271,12 @@ func (self *Catalog) Close () error {
 
     self.db.Close()
     self.db = nil
+
+    err := os.Chtimes(*self.catalogFilepath, self.nowTime, self.nowTime)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not update catalog times")
+        return errorNew
+    }
 
     return nil
 }
@@ -400,9 +424,9 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error 
         relFilepath := self.getFilePath(lr.filename)
 
         if lr.WasFound == true {
-            self.reportingChannel <- &CatalogChange { ChangeType: CatalogEntryUpdate, RelFilepath: &relFilepath }
+            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypeFile, ChangeType: &UpdateTypeUpdate, RelPath: &relFilepath }
         } else {
-            self.reportingChannel <- &CatalogChange { ChangeType: CatalogEntryInsert, RelFilepath: &relFilepath }
+            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypeFile, ChangeType: &UpdateTypeCreate, RelPath: &relFilepath }
         }
     }
 
@@ -535,7 +559,7 @@ func (self *Catalog) PruneOld () error {
 
             l.Debug("Reporting file as deleted.", "RelFilepath", relFilepath)
 
-            self.reportingChannel <- &CatalogChange { ChangeType: CatalogEntryDelete, RelFilepath: &relFilepath }
+            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypeFile, ChangeType: &UpdateTypeDelete, RelPath: &relFilepath }
         }
 
         rows.Close()

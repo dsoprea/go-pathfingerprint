@@ -48,7 +48,7 @@ func main() {
     reportFilename = o.ReportFilename
     profileFilename = o.ProfileFilename
 
-    var reportingDataChannel chan *pfinternal.CatalogChange = nil
+    var reportingDataChannel chan *pfinternal.ChangeEvent = nil
     var reportingQuitChannel chan bool = nil
     var c *pfinternal.Catalog
     var err error
@@ -72,10 +72,10 @@ func main() {
         defer pprof.StopCPUProfile()
     }
 
-    p := pfinternal.NewPath(&hashAlgorithm)
+    p := pfinternal.NewPath(&hashAlgorithm, reportingDataChannel)
 
     if reportFilename != "" {
-        reportingDataChannel = make(chan *pfinternal.CatalogChange, 1000)
+        reportingDataChannel = make(chan *pfinternal.ChangeEvent, 1000)
         reportingQuitChannel = make(chan bool)
 
         go recordChanges(reportFilename, reportingDataChannel, reportingQuitChannel)
@@ -100,7 +100,7 @@ func main() {
     fmt.Printf("%s\n", hash)
 }
 
-func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.CatalogChange, reportingQuit <-chan bool) {
+func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.ChangeEvent, reportingQuit <-chan bool) {
     l := pfinternal.NewLogger("pfmain")
 
     f, err := os.Create(reportFilename)
@@ -116,10 +116,12 @@ func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.C
     for {
         select {
             case change := <-reportingChannel:
-                l.Debug("Catalog change.", "ChangeType", pfinternal.CatalogEntryUpdateTypes[change.ChangeType], "RelFilepath", *change.RelFilepath)
-                f.WriteString(pfinternal.CatalogEntryUpdateTypes[change.ChangeType])
+                l.Debug("Catalog change.", "EntityType", *change.EntityType, "ChangeType", *change.ChangeType, "RelPath", *change.RelPath)
+                f.WriteString(*change.ChangeType)
                 f.WriteString(" ")
-                f.WriteString(*change.RelFilepath)
+                f.WriteString(*change.EntityType)
+                f.WriteString(" ")
+                f.WriteString(*change.RelPath)
                 f.WriteString("\n")
             case <-reportingQuit:
                 l.Debug("Reporting terminating.")

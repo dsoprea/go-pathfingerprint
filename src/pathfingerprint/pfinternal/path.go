@@ -15,11 +15,14 @@ const (
 
 type Path struct {
     hashAlgorithm *string
+    reportingDataChannel chan<- *ChangeEvent
 }
 
-func NewPath(hashAlgorithm *string) *Path {
+func NewPath(hashAlgorithm *string, reportingDataChannel chan<- *ChangeEvent) *Path {
     p := Path {
-            hashAlgorithm: hashAlgorithm }
+            hashAlgorithm: hashAlgorithm,
+            reportingDataChannel: reportingDataChannel,
+    }
 
     return &p
 }
@@ -102,7 +105,7 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
         defer closeCatalog()
     }
 
-    p := NewPath(self.hashAlgorithm)
+    p := NewPath(self.hashAlgorithm, self.reportingDataChannel)
     entriesChannel, doneChannel, err := p.List(scanPath)
     if err != nil {
         newError := l.MergeAndLogError(err, "Could not list children in path", "scanPath", *scanPath)
