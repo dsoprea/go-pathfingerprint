@@ -88,7 +88,8 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
             nowTime: nowTime,
             nowEpoch: nowEpoch,
             hashAlgorithm: hashAlgorithm,
-            reportingChannel: reportingChannel }
+            reportingChannel: reportingChannel,
+    }
 
     return &c, nil
 }
@@ -188,22 +189,25 @@ func (self *Catalog) Open () error {
         errorNew := l.MergeAndLogError(err, "Could not connect DB", "DbType", DbType, "DbFilename", self.catalogFilepath)
         return errorNew
     }
-/*
-    // Lock the file.
 
-    query = "BEGIN EXCLUSIVE TRANSACTION"
-
-    _, err = db.Exec(query)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not open transaction")
-        return errorNew
-    }
-*/
     // Make sure the table exists.
 
     h, err := self.getHashObject()
     if err != nil {
         errorNew := l.MergeAndLogError(err, "Could not get hash object (catalog-open)")
+        return errorNew
+    }
+
+    query = 
+        "CREATE TABLE `path_info` (" +
+            "`path_info_id` INTEGER NOT NULL PRIMARY KEY, " +
+            "`rel_path` VARCHAR(1000) NOT NULL, " +
+            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NOT NULL " +
+        ")"
+
+    err = self.createTable (db, "path_info", &query)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not create path_info table")
         return errorNew
     }
 
@@ -217,28 +221,26 @@ func (self *Catalog) Open () error {
             "CONSTRAINT `filename_idx` UNIQUE (`filename`)" +
         ")"
 
-    err = self.createTable ("catalog_entries", &query)
+    err = self.createTable (db, "catalog_entries", &query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not create table")
+        errorNew := l.MergeAndLogError(err, "Could not create catalog_entries table")
         return errorNew
     }
-
-// TODO(dustin): !! Create a path_info table that we can store the last known 
-//                  hash of that path in (so we can emit path-change events)
-//                  and be able to write those to the report.
 
     self.db = db
 
     return nil
 }
 
-func (self *Catalog) createTable (tableName string, tableQuery *string) error {
-    _, err = db.Exec(tableQuery)
+func (self *Catalog) createTable (db *sql.DB, tableName string, tableQuery *string) error {
+    l := NewLogger("catalog")
+
+    _, err := db.Exec(*tableQuery)
 
     if err != nil {
         // Check for something like this: table `catalog` already exists
         if strings.HasSuffix(err.Error(), "already exists") {
-            l.Debug("Table already exists.", "Name", *tableName)
+            l.Debug("Table already exists.", "Name", tableName)
         } else {
             errorNew := l.MergeAndLogError(err, "Could not create table")
             return errorNew
@@ -249,9 +251,6 @@ func (self *Catalog) createTable (tableName string, tableQuery *string) error {
 }
 
 func (self *Catalog) Close () error {
-//    var query string
-//    var err error
-
     l := NewLogger("catalog")
 
     l.Debug("Closing database.", "catalogFilepath", *self.catalogFilepath)
@@ -259,15 +258,6 @@ func (self *Catalog) Close () error {
     if self.db == nil {
         return errors.New("Connection not open and can't be closed.")
     }
-/*
-    query = "COMMIT TRANSACTION"
-
-    _, err = self.db.Exec(query)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not commit transaction")
-        return errorNew
-    }
-*/
 
     self.db.Close()
     self.db = nil
@@ -279,6 +269,94 @@ func (self *Catalog) Close () error {
     }
 
     return nil
+}
+
+// Update the catalog with the info for the path that the catalog represents. 
+// This action allows us to determine when the directory is new or when the 
+// contents have changed. 
+func (self *Catalog) SetPathHash (relPath *string, hash *string) (*string, error) {
+    var query string
+
+    l := NewLogger("catalog")
+
+    query = 
+        "SELECT " +
+            "`pi`.`hash` " +
+        "FROM " +
+            "`path_info` `pi` " +
+        "WHERE " +
+            "`pi`.`path_info_id` = 1"
+
+    rows, err := self.db.Query(query)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not prepare path-info lookup query")
+        return nil, errorNew
+    }
+
+    if rows.Next() == true {
+        // The record exists. Check the hash value.
+
+        var currentHash string
+
+        err = rows.Scan(&currentHash)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not parse path-info lookup result record")
+            return nil, errorNew
+        }
+
+        rows.Close()
+
+        if currentHash == *hash {
+            return &PathStateUnaffected, nil
+        }
+
+        // The hash has changed.
+
+// TODO(dustin): Can we use an alias on the table here?
+        query = 
+            "UPDATE " +
+                "`path_info` " +
+            "SET " +
+                "`hash` = ? " +
+            "WHERE " +
+                "`path_info_id` = 1"
+
+        stmt, err := self.db.Prepare(query)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not prepare path-info UPDATE query")
+            return nil, errorNew
+        }
+
+        _, err = stmt.Exec(*hash)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not execute path-info UPDATE query")
+            return nil, errorNew
+        }
+
+        return &PathStateUpdated, nil
+    } else {
+        // The record doesn't exist. Create it.
+
+        query = 
+            "INSERT INTO `path_info` " +
+                "(`path_info_id`, `rel_path`, `hash`) " +
+            "VALUES " +
+                "(1, ?, ?)"
+
+        stmt, err := self.db.Prepare(query)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not prepare path-info INSERT query")
+            return nil, errorNew
+        }
+
+        _, err = stmt.Exec(*relPath, *hash)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not execute path-info INSERT query")
+            return nil, errorNew
+        }
+    
+        return &PathStateNew, nil
+    }
 }
 
 func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
@@ -345,23 +423,14 @@ func (self *Catalog) Lookup (filename *string) (*LookupResult, error) {
 
             l.Debug("Setting last_check_epoch for entry", "filename", *filename, "last_check_epoch", self.nowEpoch)
 
-// TODO(dustin): Finish debugging the alias syntax.
-/*
+// TODO(dustin): Can we use an alias on the table here?
             query = 
                 "UPDATE " +
-                    "`catalog_entries` `ce` " +
+                    "`catalog_entries` " +
                 "SET " +
-                    "`ce`.`last_check_epoch` = ? " +
+                    "`last_check_epoch` = ? " +
                 "WHERE " +
-                    "`ce`.`catalog_entry_id` = ?"
-*/
-            query = 
-                "UPDATE " +
-                    "catalog_entries " +
-                "SET " +
-                    "last_check_epoch = ? " +
-                "WHERE " +
-                    "catalog_entry_id = ?"
+                    "`catalog_entry_id` = ?"
 
             stmt, err := self.db.Prepare(query)
             if err != nil {
@@ -439,25 +508,15 @@ func (self *Catalog) Update (lr *LookupResult, mtime int64, hash *string) error 
     if lr.WasFound == true {
         l.Debug("Updating entry", "filename", *lr.filename, "id", lr.entry.id, "mtime", lr.entry.mtime, "hash", lr.entry.hash)
 
-// TODO(dustin): Finish debugging the alias syntax.
-/*
+// TODO(dustin): Can we use an alias on the table here?
         query = 
             "UPDATE " +
-                "`catalog_entries` AS `ce` " +
+                "`catalog_entries` " +
             "SET " +
-                "`ce`.`hash` = ?, " +
-                "`ce`.`mtime_epoch` = ? " +
+                "`hash` = ?, " +
+                "`mtime_epoch` = ? " +
             "WHERE " +
-                "`ce`.`catalog_entry_id` = ?"
-*/
-        query = 
-            "UPDATE " +
-                "catalog_entries " +
-            "SET " +
-                "hash = ?, " +
-                "mtime_epoch = ? " +
-            "WHERE " +
-                "catalog_entry_id = ?"
+                "`catalog_entry_id` = ?"
 
         stmt, err := self.db.Prepare(query)
         if err != nil {

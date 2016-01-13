@@ -93,6 +93,8 @@ func main() {
         os.Exit(2)
     }
 
+// TODO(dustin): We need to find catalogs with an mtime prior to the catalogs' now-time and emit path-deleted events.
+
     if reportFilename != "" {
         reportingQuitChannel <- true
     }

@@ -15,13 +15,13 @@ const (
 
 type Path struct {
     hashAlgorithm *string
-    reportingDataChannel chan<- *ChangeEvent
+    reportingChannel chan<- *ChangeEvent
 }
 
-func NewPath(hashAlgorithm *string, reportingDataChannel chan<- *ChangeEvent) *Path {
+func NewPath(hashAlgorithm *string, reportingChannel chan<- *ChangeEvent) *Path {
     p := Path {
             hashAlgorithm: hashAlgorithm,
-            reportingDataChannel: reportingDataChannel,
+            reportingChannel: reportingChannel,
     }
 
     return &p
@@ -105,7 +105,7 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
         defer closeCatalog()
     }
 
-    p := NewPath(self.hashAlgorithm, self.reportingDataChannel)
+    p := NewPath(self.hashAlgorithm, self.reportingChannel)
     entriesChannel, doneChannel, err := p.List(scanPath)
     if err != nil {
         newError := l.MergeAndLogError(err, "Could not list children in path", "scanPath", *scanPath)
@@ -198,6 +198,20 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
 
     hash := fmt.Sprintf("%x", h.Sum(nil))
     l.Debug("Calculated PATH hash.", "scanPath", *scanPath, "hash", hash)
+
+// TODO(dustin): !! We need to pass a relative path, not an absolute one, for path portability.
+    pathState, err := existingCatalog.SetPathHash(scanPath, &hash)
+    if err != nil {
+        newError := l.MergeAndLogError(err, "Could not update catalog path-info", "scanPath", *scanPath)
+        return "", newError
+    }
+
+// TODO(dustin): !! We need to pass a relative path, not an absolute one, for path portability.
+    if *pathState == PathStateNew {
+        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeCreate, RelPath: scanPath }
+    } else if (*pathState == PathStateUpdated) {
+        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeUpdate, RelPath: scanPath }
+    }
 
     return hash, nil
 }
