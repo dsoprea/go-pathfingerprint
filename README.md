@@ -48,9 +48,12 @@ $ pflookup -c catalog_path
 
 $ pflookup -c catalog_path -p subdir1
 722ac04c963e16f39655fd4ea0a428ff32ba8399
+
+$ pflookup -c catalog_path -p subdir1/aa
+da39a3ee5e6b4b0d3255bfef95601890afd80709
 ```
 
-The second form just provides a specific subdirectory that you want the hash for. By default, it returns for the root.
+The `second` form just provides a specific subdirectory that you want the hash for. By default, it returns for the root. The `third` form is similar, but, in this case, we're looking up the hash for a specific file.
 
 
 ## Other Features

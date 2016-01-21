@@ -5,6 +5,7 @@ import (
     "strconv"
     "os"
     "path"
+    "path/filepath"
     "database/sql"
 
     _ "github.com/mattn/go-sqlite3"
@@ -670,55 +671,104 @@ func deleteCatalog (catalogFilepath *string, hashAlgorithm *string, doLookupRelP
     return relPath, nil
 }
 
-func RecallHash (catalogPath *string, recallScanRelPath *string, hashAlgorithm *string) (*string, error) {
+// First, assume that the path argument is a path. If a catalog doesn't exist 
+// for it, then assume that we were given a filename, too, and see if we can 
+// find a catalog after stripping that filename.
+func findCatalog (catalogPath *string, relPath *string, hashAlgorithm *string) (*string, *string, error) {
     l := NewLogger("catalog")
-    
+
     cc, err := newCatalogCommon(hashAlgorithm)
     if err != nil {
         errorNew := l.MergeAndLogError(err, "Could not create catalog-common object (recall-hash)")
-        return nil, errorNew
+        return nil, nil, errorNew
     }
 
-    catalogFilename, err := cc.getCatalogFilename(recallScanRelPath)
+    catalogFilename, err := cc.getCatalogFilename(relPath)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not formulate catalog filename", "recallScanRelPath", *recallScanRelPath)
-        return nil, errorNew
+        errorNew := l.MergeAndLogError(err, "Could not formulate catalog filename", "recallScanRelPath", *relPath)
+        return nil, nil, errorNew
     }
-
-    var recallScanRelPathPhrase string
-    if recallScanRelPath == nil {
-        recallScanRelPathPhrase = ""
-    } else {
-        recallScanRelPathPhrase = *recallScanRelPath
-    }
-
-    l.Debug("Recalling hash.", "recallScanRelPath", recallScanRelPathPhrase, "catalogFilename", *catalogFilename)
 
     catalogFilepath := path.Join(*catalogPath, *catalogFilename)
 
     f, err := os.Open(catalogFilepath)
-    if err != nil {
-        errorNew := l.LogError("There's no catalog for that relative path.")
-        return nil, errorNew
+    if err == nil {
+        return &catalogFilepath, nil, nil
     }
 
     f.Close()
 
+    // Now, assume that we might've been given a specific filename entry, as well.
+
+    d := filepath.Dir(*relPath)
+    strippedPath := &d
+    if *strippedPath == "." {
+        strippedPath = nil
+    }
+
+    b := filepath.Base(*relPath)
+    entryFilename := &b
+
+    catalogFilename, err = cc.getCatalogFilename(strippedPath)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not formulate catalog filename from stripped path")
+        return nil, nil, errorNew
+    }
+
+    catalogFilepath = path.Join(*catalogPath, *catalogFilename)
+
+    f, err = os.Open(catalogFilepath)
+    if err != nil {
+        errorNew := l.LogError("Could not find catalog as a path *or* a file.")
+        return nil, nil, errorNew
+    }
+
+    f.Close()
+
+    return &catalogFilepath, entryFilename, nil
+}
+
+func RecallHash (catalogPath *string, recallScanRelPath *string, hashAlgorithm *string) (*string, error) {
+    l := NewLogger("catalog")
+    
+    catalogFilepath, entryFilename, err := findCatalog(catalogPath, recallScanRelPath, hashAlgorithm)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not find catalog")
+        return nil, errorNew
+    }
+
+    l.Debug("Recalling hash.", "catalogFilename", *catalogFilepath, "fileEntryGiven", entryFilename != nil)
+
     var hash *string
 
     readHash := func (cr *catalogResource) error {
-        var err error
+        if entryFilename != nil {
+            lr, err := cr.lookup(entryFilename)
+            if err != nil {
+                errorNew := l.MergeAndLogError(err, "Could not look in the matching catalog", "catalogFilepath", catalogFilepath)
+                return errorNew
+            }
 
-        hash, err = cr.getLastPathHash()
-        if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not get last path hash", "catalogFilepath", catalogFilepath)
-            return errorNew
+            if lr.WasFound == false {
+                errorNew := l.LogError("Could not find the given file in the matching catalog", "catalogFilepath", catalogFilepath, "filename", *entryFilename)
+                return errorNew
+            }
+
+            hash = &lr.entry.hash
+        } else {
+            var err error
+
+            hash, err = cr.getLastPathHash()
+            if err != nil {
+                errorNew := l.MergeAndLogError(err, "Could not get last path hash", "catalogFilepath", catalogFilepath)
+                return errorNew
+            }
         }
 
         return nil
     }
 
-    err = executeWithCatalog(&catalogFilepath, hashAlgorithm, readHash)
+    err = executeWithCatalog(catalogFilepath, hashAlgorithm, readHash)
     if err != nil {
         errorNew := l.MergeAndLogError(err, "Could not read catalog or lookup path hash", "catalogFilepath", catalogFilepath, "recallScanRelPath", *recallScanRelPath)
         return nil, errorNew
