@@ -6,6 +6,7 @@ import (
     "fmt"
     "path"
     "hash"
+    "io/ioutil"
 
     "path/filepath"
 )
@@ -28,29 +29,18 @@ func NewPath(hashAlgorithm *string, reportingChannel chan<- *ChangeEvent) *Path 
     return &p
 }
 
-func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
+func (self *Path) List(path *string) (<-chan os.FileInfo, <-chan bool, error) {
     l := NewLogger("path")
 
-    entriesChannel := make(chan *os.FileInfo)
+    entriesChannel := make(chan os.FileInfo)
     doneChannel := make(chan bool)
 
     go func() {
-        p, err := os.Open(*path)
+        list, err := ioutil.ReadDir(*path)
         l.DieIf(err, "Could not open scan path")
 
-        defer p.Close()
-
-        for {
-            entries, err := p.Readdir(PathListBatchSize)
-            if err == io.EOF {
-                break
-            } else if err != nil {
-                l.DieIf(err, "Could not list path children")
-            }
-
-            for i := range entries {
-                entriesChannel <- &entries[i]
-            }
+        for _, fi := range list {
+            entriesChannel <- fi
         }
 
         doneChannel <- true
@@ -59,7 +49,7 @@ func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
     return entriesChannel, doneChannel, nil
 }
 
-func (self *Path) getHashObject () (hash.Hash, error) {
+func (self *Path) getHashObject() (hash.Hash, error) {
     l := NewLogger("path")
 
     h, err := getHashObject(self.hashAlgorithm)
@@ -130,8 +120,8 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
             case entry := <-entriesChannel:
                 var childHash string = ""
 
-                filename := (*entry).Name()
-                isDir := (*entry).IsDir()
+                filename := entry.Name()
+                isDir := entry.IsDir()
 
                 childPath := filepath.Join(*scanPath, filename)
 
