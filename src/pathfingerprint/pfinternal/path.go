@@ -135,6 +135,14 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
 
                 childPath := filepath.Join(*scanPath, filename)
 
+                var relChildPath string
+
+                if relScanPath != nil {
+                    relChildPath = filepath.Join(*relScanPath, filename)
+                } else {
+                    relChildPath = filename
+                }
+
                 if isDir == true {
                     var bc *Catalog
 
@@ -198,7 +206,7 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
                     }
                 }
 
-                io.WriteString(h, childPath)
+                io.WriteString(h, relChildPath)
                 io.WriteString(h, "\000")
                 io.WriteString(h, childHash)
                 io.WriteString(h, "\000")
