@@ -5,7 +5,6 @@ import (
     "fmt"
     "runtime/pprof"
 //    "runtime"
-    "unicode/utf8"
     
     flags "github.com/jessevdk/go-flags"
 
