@@ -66,7 +66,7 @@ func main() {
     l.ConfigureRootLogger()
 
     if profileFilename != "" {
-        l.Info("Profiling enabled.")
+        l.Debug("Profiling enabled.")
 
         f, err := os.Create(profileFilename)
         if err != nil {
