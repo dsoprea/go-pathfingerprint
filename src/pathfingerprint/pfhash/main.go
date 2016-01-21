@@ -23,8 +23,6 @@ type options struct {
     ReportFilename string   `short:"R" long:"report" default:"" description:"Write a report of changed files ('-' for STDERR)"`
     ProfileFilename string  `short:"P" long:"profile" default:"" description:"Write performance profiling information"`
     ShowDebugLogging bool   `short:"d" long:"debug-log" default:"false" description:"Show debug logging"`
-    RecallOnly bool         `short:"r" long:"recall" default:"false" description:"Lookup the last calculated hash (don't recalculate)"`
-    RecallRelPath string    `short:"p" long:"recall-rel-path" default:"" description:"If we're recalling, lookup for a specific subdirectory"`
 }
 
 func readOptions () *options {
@@ -45,8 +43,6 @@ func main() {
     var allowUpdates bool
     var reportFilename string
     var profileFilename string
-    var recallOnly bool
-    var recallRelPath string
 
     o := readOptions()
 
@@ -56,8 +52,6 @@ func main() {
     allowUpdates = o.NoUpdates == false
     reportFilename = o.ReportFilename
     profileFilename = o.ProfileFilename
-    recallOnly = o.RecallOnly
-    recallRelPath = o.RecallRelPath
 
     var reportingDataChannel chan *pfinternal.ChangeEvent = nil
     var reportingQuitChannel chan bool = nil
@@ -68,7 +62,7 @@ func main() {
         pfinternal.SetDebugLogging()
     }
 
-    l := pfinternal.NewLogger("pfmain")
+    l := pfinternal.NewLogger("pfhash")
     l.ConfigureRootLogger()
 
     if profileFilename != "" {
@@ -77,31 +71,12 @@ func main() {
         f, err := os.Create(profileFilename)
         if err != nil {
             l.Error("Could not create profiler profile.", "error", err.Error())
-            os.Exit(1)
+            os.Exit(2)
         }
 
 //        runtime.SetCPUProfileRate(100)
         pprof.StartCPUProfile(f)
         defer pprof.StopCPUProfile()
-    }
-
-    if recallOnly == true {
-        var effectiveRelPath *string
-
-        if recallRelPath != "" {
-            effectiveRelPath = &recallRelPath
-        } else {
-            effectiveRelPath = nil
-        }
-
-        hash, err := pfinternal.RecallHash(&catalogPath, effectiveRelPath, &hashAlgorithm)
-        if err != nil {
-            l.Error("Could not recall the hash", "error", err.Error())
-            os.Exit(2)
-        }
-
-        fmt.Printf("%s\n", *hash)
-        return
     }
 
     if reportFilename != "" {
@@ -114,7 +89,7 @@ func main() {
     err = os.MkdirAll(catalogPath, PathCreationMode)
     if err != nil {
         l.Error("Could not create catalog path", "error", err.Error())
-        os.Exit(3)
+        os.Exit(4)
     }
 
     p := pfinternal.NewPath(&hashAlgorithm, reportingDataChannel)
@@ -122,20 +97,20 @@ func main() {
     c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm, reportingDataChannel)
     if err != nil {
         l.Error("Could not create catalog.", "error", err.Error())
-        os.Exit(4)
+        os.Exit(5)
     }
 
     hash, err := p.GeneratePathHash(&scanPath, c)
     if err != nil {
         l.Error("Could not generate hash.", "error", err.Error())
-        os.Exit(5)
+        os.Exit(6)
     }
 
     if allowUpdates == true {
         err = c.PruneOldCatalogs()
         if err != nil {
             l.Error("Could not prune old catalogs.", "error", err.Error())
-            os.Exit(6)
+            os.Exit(7)
         }
     }
 

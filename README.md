@@ -4,7 +4,7 @@ This tool will recursively and efficiently calculate a SHA1 hash for a given dir
 ## Usage
 
 ```
-$ pathfingerprint -s <scan path> -c <catalog path>
+$ pfhash -s <scan path> -c <catalog path>
 ```
 
 The catalog path does not have to already exist.
@@ -18,21 +18,39 @@ The catalog path does not have to already exist.
 
 ## Example
 
+Calculate the hashes on an expensive (hundreds of directories, tens of thousands of files with an average size of ~5M) path:
+
 ```
-$ time pathfingerprint -s photos_path -c catalog_path
+$ time pfhash -s photos_path -c catalog_path
 4767c85a1743ea88a31caca90c3f23cdbef30471
 
 real    36m59.201s
 user    6m47.892s
 sys     3m24.316s
+```
 
-$ time pathfingerprint -s photos_path -c catalog_path
+Run it again and see the savings:
+
+```
+$ time pfhash -s photos_path -c catalog_path
 4767c85a1743ea88a31caca90c3f23cdbef30471
 
 real    3m16.700s
 user    0m8.928s
 sys     0m8.112s
 ```
+
+If you positively don't want to update the hashes nor do you want a report of changes, use the `pflookup` command:
+
+```
+$ pflookup -c catalog_path
+8250cf94b55e106ce48a83a15569b866aecc1183
+
+$ pflookup -c catalog_path -p subdir1
+722ac04c963e16f39655fd4ea0a428ff32ba8399
+```
+
+The second form just provides a specific subdirectory that you want the hash for. By default, it returns for the root.
 
 
 ## Other Features
@@ -47,7 +65,7 @@ $ mkdir -p scan_path/subdir2
 $ touch scan_path/subdir1/aa
 $ touch scan_path/subdir1/bb
 
-$ pathfingerprint -s scan_path -c catalog_path -R - 
+$ pfhash -s scan_path -c catalog_path -R - 
 create file subdir1/aa
 create file subdir1/bb
 create path subdir1
@@ -58,7 +76,7 @@ f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
 $ touch scan_path/subdir1/aa
 $ touch scan_path/subdir2/new_file
 
-$ pathfingerprint -s scan_path -c catalog_path -R - 
+$ pfhash -s scan_path -c catalog_path -R - 
 update file subdir1/aa
 create file subdir2/new_file
 update path subdir2
@@ -67,18 +85,6 @@ update path .
 ```
 
 Note the "create path ." remark. This is shown because the root catalog didn't previously exist.
-
-
-### Hash lookup
-
-In the event that you'd like to simply lookup the last hash that was calculated, you can use the "-r" option. You can specified a specific, relative subdirectory by adding the "-p" option, too.
-
-```
-$ pathfingerprint -s scan_path -c catalog_path -r
-8250cf94b55e106ce48a83a15569b866aecc1183
-$ pathfingerprint -s scan_path -c catalog_path -r -p subdir1
-722ac04c963e16f39655fd4ea0a428ff32ba8399
-```
 
 
 ### No-Updates Mode
@@ -100,7 +106,7 @@ The catalog will usually be updated whether it's the first time you calculate a 
 If you feel compelled, you can inspect the catalogs yourself.
 
 ```
-$ pathfingerprint -s scan_path -c catalog_path -R - 
+$ pfhash -s scan_path -c catalog_path -R - 
 create file subdir1/aa
 create file subdir1/bb
 create path subdir1
@@ -155,19 +161,31 @@ sqlite> select * from path_info;
 
 ## Command-Line Options
 
-$ pathfingerprint -h
+$ pfhash -h
 Usage:
-  pathfingerprint [OPTIONS]
+  pfhash [OPTIONS]
 
 Application Options:
-  -s, --scan-path=       Path to scan
+  -s, --scan-path=    Path to scan
+  -c, --catalog-path= Path to host catalog (will be created if it doesn't exist)
+  -h, --algorithm=    Hashing algorithm (sha1, sha256) (default: sha1)
+  -n, --no-updates    Don't update the catalog (will also prevent reporting of deletions) (default: false)
+  -R, --report=       Write a report of changed files ('-' for STDERR)
+  -P, --profile=      Write performance profiling information
+  -d, --debug-log     Show debug logging (default: false)
+
+Help Options:
+  -h, --help          Show this help message
+
+
+$ pflookup -h
+Usage:
+  pflookup [OPTIONS]
+
+Application Options:
   -c, --catalog-path=    Path to host catalog (will be created if it doesn't exist)
   -h, --algorithm=       Hashing algorithm (sha1, sha256) (default: sha1)
-  -n, --no-updates       Don't update the catalog (will also prevent reporting of deletions) (default: false)
-  -R, --report=          Write a report of changed files ('-' for STDERR)
-  -P, --profile=         Write performance profiling information
   -d, --debug-log        Show debug logging (default: false)
-  -r, --recall           Lookup the last calculated hash (don't recalculate) (default: false)
   -p, --recall-rel-path= If we're recalling, lookup for a specific subdirectory
 
 Help Options:

@@ -1,25 +1,32 @@
 export GOPATH=${PWD}
 
 INSTALL_PATH=/usr/local/bin
-BUILD_PACKAGES=pathfingerprint/pathfingerprint
-PFINTERNAL_SOURCEFILES=src/pathfingerprint/pfinternal/*.go
-PATHFINGERPRINT_SOURCEFILES=src/pathfingerprint/pathfingerprint/*.go
-SOURCEFILES=${PFINTERNAL_SOURCEFILES} ${PATHFINGERPRINT_SOURCEFILES}
-TARGET_BINARY_FILEPATH=${INSTALL_PATH}/pathfingerprint
 
-all: bin/pathfingerprint
+PFHASH_EXECUTABLE_FILENAME=pfhash
+PFLOOKUP_EXECUTABLE_FILENAME=pflookup
+
+PFINTERNAL_SOURCEFILES=src/pathfingerprint/pfinternal/*.go
+PFHASH_SOURCEFILES=${PFINTERNAL_SOURCEFILES} src/pathfingerprint/${PFHASH_EXECUTABLE_FILENAME}/*.go
+PFLOOKUP_SOURCEFILES=${PFINTERNAL_SOURCEFILES} src/pathfingerprint/${PFLOOKUP_EXECUTABLE_FILENAME}/*.go
+
+all: bin/${PFHASH_EXECUTABLE_FILENAME} bin/${PFLOOKUP_EXECUTABLE_FILENAME}
 
 .PHONY: all clean install
 
 clean:
-	rm -f ${TARGET_BINARY_FILEPATH}
+	rm -f ${INSTALL_PATH}/${PFHASH_EXECUTABLE_FILENAME} ${INSTALL_PATH}/${PFLOOKUP_EXECUTABLE_FILENAME}
 
 	rm -fr bin pkg 
 	rm -fr src/gopkg.in src/code.google.com src/github.com
 
-bin/pathfingerprint: ${SOURCEFILES}
-	go get ${BUILD_PACKAGES}
-	go install ${BUILD_PACKAGES}
+bin/${PFHASH_EXECUTABLE_FILENAME}: ${PFHASH_SOURCEFILES}
+	go get pathfingerprint/${PFHASH_EXECUTABLE_FILENAME}
+	go install pathfingerprint/${PFHASH_EXECUTABLE_FILENAME}
 
-install: bin/pathfingerprint
-	install -m 755 bin/pathfingerprint ${TARGET_BINARY_FILEPATH}
+bin/${PFLOOKUP_EXECUTABLE_FILENAME}: ${PFLOOKUP_SOURCEFILES}
+	go get pathfingerprint/${PFLOOKUP_EXECUTABLE_FILENAME}
+	go install pathfingerprint/${PFLOOKUP_EXECUTABLE_FILENAME}
+
+install: bin/${PFHASH_EXECUTABLE_FILENAME} bin/${PFLOOKUP_EXECUTABLE_FILENAME}
+	install -m 755 bin/${PFHASH_EXECUTABLE_FILENAME} ${INSTALL_PATH}/${PFHASH_EXECUTABLE_FILENAME}
+	install -m 755 bin/${PFLOOKUP_EXECUTABLE_FILENAME} ${INSTALL_PATH}/${PFLOOKUP_EXECUTABLE_FILENAME}

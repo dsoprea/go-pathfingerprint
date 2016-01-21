@@ -38,6 +38,11 @@ func newCatalogResource (catalogFilepath *string, relScanPath *string, hashAlgor
         return nil, errorNew
     }
 
+    doLookup := relScanPath == nil
+    if relScanPath != nil && *relScanPath == "" {
+        relScanPath = nil
+    }
+
     cr := catalogResource { 
             catalogFilepath: catalogFilepath,
             relScanPath: relScanPath,
@@ -45,7 +50,7 @@ func newCatalogResource (catalogFilepath *string, relScanPath *string, hashAlgor
     }
 
     // If no relScanPath was given, look it up in the actual catalog.
-    if cr.relScanPath == nil {
+    if doLookup {
         l.Debug("We weren't given a relScanPath, so we'll need to look it up", "catalogFilepath", *catalogFilepath)
 
         err := cr.Open()
@@ -690,6 +695,14 @@ func RecallHash (catalogPath *string, recallScanRelPath *string, hashAlgorithm *
     l.Debug("Recalling hash.", "recallScanRelPath", recallScanRelPathPhrase, "catalogFilename", *catalogFilename)
 
     catalogFilepath := path.Join(*catalogPath, *catalogFilename)
+
+    f, err := os.Open(catalogFilepath)
+    if err != nil {
+        errorNew := l.LogError("There's no catalog for that relative path.")
+        return nil, errorNew
+    }
+
+    f.Close()
 
     var hash *string
 

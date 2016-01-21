@@ -54,10 +54,8 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
 
     l.Debug("Current time.", "nowEpoch", nowEpoch)
 
-    // Keep this at nil. We just want it to be obvious how we're passing nil.
-    var relScanPath *string
-
-    cr, err := newCatalogResource(&catalogFilepath, relScanPath, hashAlgorithm)
+    e := string("")
+    cr, err := newCatalogResource(&catalogFilepath, &e, hashAlgorithm)
     if err != nil {
         errorNew := l.MergeAndLogError(err, "Could not create catalog-resource object (catalog)")
         return nil, errorNew
@@ -67,7 +65,7 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
             catalogPath: catalogPath, 
             scanPath: scanPath, 
             allowUpdates: allowUpdates,
-            relScanPath: relScanPath, 
+            relScanPath: nil, 
             catalogFilename: catalogFilename, 
             catalogFilepath: &catalogFilepath,
             nowTime: nowTime,
