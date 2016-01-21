@@ -60,7 +60,7 @@ The `second` form just provides a specific subdirectory that you want the hash f
 
 ### Reporting
 
-You can tell the tool to write a file with all detected changes. This file will looks like:
+You can tell the tool to write a file with all detected changes (or "-" for STDERR). This file will looks like:
 
 ```
 $ mkdir -p scan_path/subdir1
@@ -94,6 +94,8 @@ Note the "create path ." remark. This is shown because the root catalog didn't p
 
 The catalog will usually be updated whether it's the first time you calculate a hash or subsequent times. As mentioned in the implementation notes, we need to do this in order to determine when files have been deleted. You can pass the parameter to prevent updates from being made (in the event that the catalog has been stored on a read-only mount, for example), but, if you've requested a changes report, this will cause deletions to be omitted from the report.
 
+**This feature is still experimental.**
+
 
 ## Implementation Notes
 
@@ -118,11 +120,11 @@ create path .
 f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
 ```
 
-To look at the catalog for a particular path, calculate a SHA1 for the relative path name:
+To look at the catalog for a particular path, first calculate a SHA1 for the relative path name. For example:
 
 ```
-$ echo -n subdir1 | sha1sum | awk '{print $1}'
-84996436541614ee0a22f04a32d22d45407c4a42
+$ echo -n subdir1 | sha1sum
+84996436541614ee0a22f04a32d22d45407c4a42  -
 ```
 
 Then, install and use the SQLite 3 command-line tool to open the file named for that hash in the catalog-path.
@@ -164,6 +166,9 @@ sqlite> select * from path_info;
 
 ## Command-Line Options
 
+### pfhash
+
+```
 $ pfhash -h
 Usage:
   pfhash [OPTIONS]
@@ -179,8 +184,12 @@ Application Options:
 
 Help Options:
   -h, --help          Show this help message
+```
 
 
+### pflookup
+
+```
 $ pflookup -h
 Usage:
   pflookup [OPTIONS]
@@ -193,3 +202,4 @@ Application Options:
 
 Help Options:
   -h, --help             Show this help message
+```
