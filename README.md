@@ -42,13 +42,27 @@ sys     0m8.112s
 You can tell the tool to write a file with all detected changes. This file will looks like:
 
 ```
-pathfingerprint -s scan_path -c catalog_path -r - 
+$ mkdir -p scan_path/subdir1
+$ mkdir -p scan_path/subdir2
+$ touch scan_path/subdir1/aa
+$ touch scan_path/subdir1/bb
+
+$ pathfingerprint -s scan_path -c catalog_path -r - 
 create file subdir1/aa
 create file subdir1/bb
 create path subdir1
 create path subdir2
 create path .
 f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
+
+$ touch scan_path/subdir1/aa
+$ touch scan_path/subdir2/new_file
+$ pathfingerprint -s scan_path -c catalog_path -r - 
+update file subdir1/aa
+create file subdir2/new_file
+update path subdir2
+update path .
+8250cf94b55e106ce48a83a15569b866aecc1183
 ```
 
 Note the "create path ." remark. This is shown because the root catalog didn't previously exist.
