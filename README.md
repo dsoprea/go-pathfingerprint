@@ -10,12 +10,6 @@ $ pfhash -s <scan path> -c <catalog path>
 The catalog path does not have to already exist.
 
 
-## Dependencies
-
-- Go 1.5+
-- Mercurial
-
-
 ## Example
 
 Calculate the hashes on an expensive (hundreds of directories, tens of thousands of files with an average size of ~5M) path:
@@ -53,7 +47,26 @@ $ pflookup -c catalog_path -r subdir1/aa
 da39a3ee5e6b4b0d3255bfef95601890afd80709
 ```
 
-The `second` form just provides a specific subdirectory that you want the hash for. By default, it returns for the root. The `third` form is similar, but, in this case, we're looking up the hash for a specific file.
+The *second* form just provides a specific subdirectory that you want the hash for. By default, it returns for the root. The *third* form is similar, but, in this case, we're looking up the hash for a specific file.
+
+
+## Dependencies
+
+- Go 1.5+
+- Mercurial
+
+
+## Install
+
+$ make
+go get pathfingerprint/pfhash
+go get pathfingerprint/pflookup
+go test pathfingerprint/pfinternal
+ok    pathfingerprint/pfinternal  0.015s
+
+$ sudo make install
+install -m 755 bin/pfhash /usr/local/bin/pfhash
+install -m 755 bin/pflookup /usr/local/bin/pflookup
 
 
 ## Other Features
