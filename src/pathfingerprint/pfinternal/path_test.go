@@ -73,7 +73,7 @@ func TestCalculateSimpleHash (t *testing.T) {
         t.Fatalf("Could not generate hash.")
     }
 
-    expectedHash := "e58842ca5e5c852751a5c686084293829b716a8b"
+    expectedHash := "7de9894aa603d20dae695e2a9bccf02d465979cb"
 
     if hash != expectedHash {
         t.Fatalf("Hash was not generated correctly: ACT [%s] != EXP [%s].", hash, expectedHash)
