@@ -22,7 +22,7 @@ Calculate the hashes on an expensive (hundreds of directories, tens of thousands
 
 ```
 $ time pfhash -s photos_path -c catalog_path
-4767c85a1743ea88a31caca90c3f23cdbef30471
+8250cf94b55e106ce48a83a15569b866aecc1183
 
 real    36m59.201s
 user    6m47.892s
@@ -33,7 +33,7 @@ Run it again and see the savings:
 
 ```
 $ time pfhash -s photos_path -c catalog_path
-4767c85a1743ea88a31caca90c3f23cdbef30471
+8250cf94b55e106ce48a83a15569b866aecc1183
 
 real    3m16.700s
 user    0m8.928s
@@ -46,10 +46,10 @@ If you positively don't want to update the hashes nor do you want a report of ch
 $ pflookup -c catalog_path
 8250cf94b55e106ce48a83a15569b866aecc1183
 
-$ pflookup -c catalog_path -p subdir1
+$ pflookup -c catalog_path -r subdir1
 722ac04c963e16f39655fd4ea0a428ff32ba8399
 
-$ pflookup -c catalog_path -p subdir1/aa
+$ pflookup -c catalog_path -r subdir1/aa
 da39a3ee5e6b4b0d3255bfef95601890afd80709
 ```
 
@@ -195,10 +195,10 @@ Usage:
   pflookup [OPTIONS]
 
 Application Options:
-  -c, --catalog-path=    Catalog path
-  -h, --algorithm=       Hashing algorithm (sha1, sha256) (default: sha1)
-  -d, --debug-log        Show debug logging (default: false)
-  -p, --recall-rel-path= If we're recalling, lookup for a specific subdirectory
+  -c, --catalog-path= Catalog path
+  -h, --algorithm=    Hashing algorithm (sha1, sha256) (default: sha1)
+  -d, --debug-log     Show debug logging (default: false)
+  -r, --rel-path=     Specific subdirectory
 
 Help Options:
   -h, --help             Show this help message

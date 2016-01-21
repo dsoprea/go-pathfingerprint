@@ -13,7 +13,7 @@ type options struct {
     CatalogPath string      `short:"c" long:"catalog-path" description:"Catalog path" required:"true"`
     HashAlgorithm string    `short:"h" long:"algorithm" default:"sha1" description:"Hashing algorithm (sha1, sha256)"`
     ShowDebugLogging bool   `short:"d" long:"debug-log" default:"false" description:"Show debug logging"`
-    RecallRelPath string    `short:"p" long:"recall-rel-path" default:"" description:"If we're recalling, lookup for a specific subdirectory"`
+    RelPath string          `short:"r" long:"rel-path" default:"" description:"Specific subdirectory"`
 }
 
 func readOptions () *options {
@@ -30,13 +30,13 @@ func readOptions () *options {
 func main() {
     var catalogPath string
     var hashAlgorithm string
-    var recallRelPath string
+    var relPath string
 
     o := readOptions()
 
     catalogPath = o.CatalogPath
     hashAlgorithm = o.HashAlgorithm
-    recallRelPath = o.RecallRelPath
+    relPath = o.RelPath
 
     if o.ShowDebugLogging == true {
         pfinternal.SetDebugLogging()
@@ -47,8 +47,8 @@ func main() {
 
     var effectiveRelPath *string
 
-    if recallRelPath != "" {
-        effectiveRelPath = &recallRelPath
+    if relPath != "" {
+        effectiveRelPath = &relPath
     } else {
         effectiveRelPath = nil
     }
