@@ -42,14 +42,16 @@ sys     0m8.112s
 You can tell the tool to write a file with all detected changes. This file will looks like:
 
 ```
-$ pathfingerprint -s /tmp/scan_path -c /tmp/catalog_path -r changes.txt 
-57d947b0b82ec79182633e8572c7e5c74748dc93
-
-$ cat changes.txt 
-insert subdir/created_file
-update subdir/updated_file
-delete subdir/deleted_file
+pathfingerprint -s scan_path -c catalog_path -r - 
+create file subdir1/aa
+create file subdir1/bb
+create path subdir1
+create path subdir2
+create path .
+f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
 ```
+
+Note the "create path ." remark. This is shown because the root catalog didn't previously exist.
 
 ### No-Updates Mode
 
@@ -62,6 +64,64 @@ The catalog will usually be updated whether it's the first time you calculate a 
 - We cache file hashes but not path hashes.
 - We determine if a file hash changes based on modified-times.
 - As we check a certain path for changes, we update a check-timestamp on each file in that catalog with a new timestamp. We then delete all entries older than that timestamp when we're done processing that directory. This efficiently allows us to both check differences *and* keep the catalog up to date.
+- Because we open and close a database for each path, it's far more efficient to process a directory structure with many files and not as much when there are many empty or under-utilized directories as compared to files.
+
+
+## Advanced Usage
+
+If you feel compelled, you can inspect the catalogs yourself.
+
+```
+$ pathfingerprint -s scan_path -c catalog_path -r - 
+create file subdir1/aa
+create file subdir1/bb
+create path subdir1
+create path subdir2
+create path .
+f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
+```
+
+To look at the catalog for a particular path, calculate a SHA1 for the relative path name:
+
+```
+$ echo -n subdir1 | sha1sum | awk '{print $1}'
+84996436541614ee0a22f04a32d22d45407c4a42
+```
+
+Then, install and use the SQLite 3 command-line tool to open the file named for that hash in the catalog-path.
+
+```
+$ sqlite3 catalog_path/84996436541614ee0a22f04a32d22d45407c4a42
+SQLite version 3.8.2 2013-12-06 14:53:30
+Enter ".help" for instructions
+Enter SQL statements terminated with a ";"
+```
+
+There are two tables: One that tracks the information for that path (`path_info`; there will only be one entry) and a table that tracks file entries (`catalog_entries`):
+
+```
+sqlite> .schema
+CREATE TABLE `path_info` (`path_info_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NOT NULL );
+CREATE TABLE `catalog_entries` (`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, `filename` VARCHAR(255) NOT NULL, `hash` VARCHAR(40) NOT NULL, `mtime_epoch` INTEGER UNSIGNED NOT NULL, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `filename_idx` UNIQUE (`filename`));
+
+sqlite> select * from path_info;
+1|subdir1|722ac04c963e16f39655fd4ea0a428ff32ba8399
+
+sqlite> select * from catalog_entries;
+1|aa|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453343619|1453343628
+2|bb|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453343620|1453343628
+```
+
+The root catalog is simply named "root". To see the last hash that was generated, look at the hash for the single record in the `path_info` table.
+
+```
+$ sqlite3 catalog_path/root
+SQLite version 3.8.2 2013-12-06 14:53:30
+Enter ".help" for instructions
+Enter SQL statements terminated with a ";"
+sqlite> select * from path_info;
+1||f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
+```
 
 
 ## Command-Line Options
@@ -75,7 +135,7 @@ Application Options:
   -c, --catalog-path= Path to host catalog (will be created if it doesn't exist)
   -h, --algorithm=    Hashing algorithm (sha1, sha256) (default: sha1)
   -n, --no-updates    Don't update the catalog (will also prevent reporting of deletions) (default: false)
-  -r, --report=       Write a report of changed files
+  -r, --report=       Write a report of changed files ('-' for STDERR)
   -p, --profile=      Write performance profiling information
   -d, --debug-log     Show debug logging (default: false)
 
