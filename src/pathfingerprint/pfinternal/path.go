@@ -98,7 +98,7 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
         closeCatalog := func () {
             l.Debug("Closing catalog.", "scanPath", *scanPath)
 
-            existingCatalog.PruneOld()
+            existingCatalog.PruneOldEntries()
 
             err = existingCatalog.Close()
             if err != nil {
@@ -159,7 +159,7 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
                         return "", newError
                     }
                 } else {
-                    var lr *LookupResult
+                    var lr *lookupResult
 
                     s, err := os.Stat(childPath)
                     if err != nil {

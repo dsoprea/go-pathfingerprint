@@ -47,7 +47,7 @@ $ mkdir -p scan_path/subdir2
 $ touch scan_path/subdir1/aa
 $ touch scan_path/subdir1/bb
 
-$ pathfingerprint -s scan_path -c catalog_path -r - 
+$ pathfingerprint -s scan_path -c catalog_path -R - 
 create file subdir1/aa
 create file subdir1/bb
 create path subdir1
@@ -58,7 +58,7 @@ f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
 $ touch scan_path/subdir1/aa
 $ touch scan_path/subdir2/new_file
 
-$ pathfingerprint -s scan_path -c catalog_path -r - 
+$ pathfingerprint -s scan_path -c catalog_path -R - 
 update file subdir1/aa
 create file subdir2/new_file
 update path subdir2
@@ -67,6 +67,19 @@ update path .
 ```
 
 Note the "create path ." remark. This is shown because the root catalog didn't previously exist.
+
+
+### Hash lookup
+
+In the event that you'd like to simply lookup the last hash that was calculated, you can use the "-r" option. You can specified a specific, relative subdirectory by adding the "-p" option, too.
+
+```
+$ pathfingerprint -s scan_path -c catalog_path -r
+8250cf94b55e106ce48a83a15569b866aecc1183
+$ pathfingerprint -s scan_path -c catalog_path -r -p subdir1
+722ac04c963e16f39655fd4ea0a428ff32ba8399
+```
+
 
 ### No-Updates Mode
 
@@ -87,7 +100,7 @@ The catalog will usually be updated whether it's the first time you calculate a 
 If you feel compelled, you can inspect the catalogs yourself.
 
 ```
-$ pathfingerprint -s scan_path -c catalog_path -r - 
+$ pathfingerprint -s scan_path -c catalog_path -R - 
 create file subdir1/aa
 create file subdir1/bb
 create path subdir1
@@ -147,13 +160,15 @@ Usage:
   pathfingerprint [OPTIONS]
 
 Application Options:
-  -s, --scan-path=    Path to scan
-  -c, --catalog-path= Path to host catalog (will be created if it doesn't exist)
-  -h, --algorithm=    Hashing algorithm (sha1, sha256) (default: sha1)
-  -n, --no-updates    Don't update the catalog (will also prevent reporting of deletions) (default: false)
-  -r, --report=       Write a report of changed files ('-' for STDERR)
-  -p, --profile=      Write performance profiling information
-  -d, --debug-log     Show debug logging (default: false)
+  -s, --scan-path=       Path to scan
+  -c, --catalog-path=    Path to host catalog (will be created if it doesn't exist)
+  -h, --algorithm=       Hashing algorithm (sha1, sha256) (default: sha1)
+  -n, --no-updates       Don't update the catalog (will also prevent reporting of deletions) (default: false)
+  -R, --report=          Write a report of changed files ('-' for STDERR)
+  -P, --profile=         Write performance profiling information
+  -d, --debug-log        Show debug logging (default: false)
+  -r, --recall           Lookup the last calculated hash (don't recalculate) (default: false)
+  -p, --recall-rel-path= If we're recalling, lookup for a specific subdirectory
 
 Help Options:
-  -h, --help          Show this help message
+  -h, --help             Show this help message
