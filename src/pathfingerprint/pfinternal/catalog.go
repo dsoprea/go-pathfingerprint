@@ -4,11 +4,13 @@ import (
     "os"
     "fmt"
     "path"
+    "io"
     "errors"
     "time"
     "strings"
     "hash"
     "strconv"
+//    "reflect"
 
     "database/sql"
 
@@ -18,6 +20,8 @@ import (
 const (
     PathCreationMode = 0755
     DbType = "sqlite3"
+    CatalogPathListBatchSize = 3
+    RootCatalogFilename = "root"
 )
 
 var ErrNoHash = errors.New("no hash recorded for the filename")
@@ -52,25 +56,13 @@ type Catalog struct {
 func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string, reportingChannel chan<- *ChangeEvent) (*Catalog, error) {
     l := NewLogger("catalog")
 
-    if allowUpdates == false {
-        l.Info("Catalog will not take any updates.")
-    }
-
     err := os.MkdirAll(*catalogPath, PathCreationMode)
     if err != nil {
         errorNew := l.MergeAndLogError(err, "Could not create catalog path", "catalogPath", *catalogPath)
         return nil, errorNew
     }
 
-    h, err := getHashObject(hashAlgorithm)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get hash object (new-catalog)")
-        return nil, errorNew
-    }
-
-    h.Write([]byte(*scanPath))
-
-    catalogFilename := fmt.Sprintf("%x", h.Sum(nil))
+    catalogFilename := RootCatalogFilename
     catalogFilepath := path.Join(*catalogPath, catalogFilename)
 
     nowTime := time.Now()
@@ -134,7 +126,7 @@ func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
         return nil, errorNew
     }
 
-    h.Write([]byte(scanPath))
+    h.Write([]byte(relScanPath))
 
     catalogFilename := fmt.Sprintf("%x", h.Sum(nil))
     catalogFilepath := path.Join(*self.catalogPath, catalogFilename)
@@ -146,6 +138,7 @@ func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
             relScanPath: &relScanPath, 
             catalogFilename: &catalogFilename, 
             catalogFilepath: &catalogFilepath,
+            nowTime: self.nowTime,
             nowEpoch: self.nowEpoch,
             hashAlgorithm: self.hashAlgorithm,
             reportingChannel: self.reportingChannel }
@@ -160,26 +153,10 @@ func (self *Catalog) Open () error {
 
     l := NewLogger("catalog")
 
-    l.Debug("Opening database.", "catalogFilepath", *self.catalogFilepath)
+    l.Debug("Opening catalog.", "catalogFilepath", *self.catalogFilepath)
 
     if self.db != nil {
         return errors.New("Connection already opened.")        
-    }
-
-    // If the catalog doesn't already exist, emit a path-create event.
-
-    f, err := os.Open(*self.catalogFilepath)
-    if err != nil {
-        var relScanPath string
-        if self.relScanPath == nil {
-            relScanPath = ""
-        } else {
-            relScanPath = *self.relScanPath
-        }
-
-        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeCreate, RelPath: &relScanPath }
-    } else {
-        f.Close()
     }
 
     // Open the DB.
@@ -253,7 +230,7 @@ func (self *Catalog) createTable (db *sql.DB, tableName string, tableQuery *stri
 func (self *Catalog) Close () error {
     l := NewLogger("catalog")
 
-    l.Debug("Closing database.", "catalogFilepath", *self.catalogFilepath)
+    l.Debug("Closing catalog.", "catalogFilepath", *self.catalogFilepath)
 
     if self.db == nil {
         return errors.New("Connection not open and can't be closed.")
@@ -262,11 +239,116 @@ func (self *Catalog) Close () error {
     self.db.Close()
     self.db = nil
 
-    err := os.Chtimes(*self.catalogFilepath, self.nowTime, self.nowTime)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not update catalog times")
-        return errorNew
+    if self.allowUpdates == true {
+        l.Debug("Updating catalog file times.", "catalogFilepath", *self.catalogFilepath)
+
+        err := os.Chtimes(*self.catalogFilepath, self.nowTime, self.nowTime)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not update catalog times")
+            return errorNew
+        }
     }
+
+    l.Debug("Catalog mtime updated.", "catalogFilepath", *self.catalogFilepath)
+
+    return nil
+}
+
+func (self *Catalog) PruneOldCatalogs () error {
+    l := NewLogger("catalog")
+
+    l.Debug("Pruning old catalogs.")
+
+    p, err := os.Open(*self.catalogPath)
+    l.DieIf(err, "Could not open catalog path")
+
+    defer p.Close()
+
+    for {
+        entries, err := p.Readdir(CatalogPathListBatchSize)
+        if err == io.EOF {
+            break
+        } else if err != nil {
+            l.DieIf(err, "Could not get next catalog")
+        }
+
+        for i := range entries {
+            e := entries[i]
+            mtimeTime := e.ModTime()
+            mtimeEpoch := mtimeTime.Unix()
+            catalogFilename := e.Name()
+            catalogFilepath := path.Join(*self.catalogPath, catalogFilename)
+
+            if mtimeEpoch >= self.nowEpoch {
+                continue
+            }
+
+            l.Debug("Pruning catalog.", "catalogFilename", catalogFilename, "mtimeTime", mtimeTime, "mtimeEpoch", mtimeEpoch, "nowTime", self.nowTime, "nowEpoch", self.nowEpoch)
+
+            // The catalog hasn't been touched. It must've been deleted.
+
+            self.deleteCatalog(&catalogFilepath)
+        }
+    }
+
+    l.Debug("Finished pruning old catalogs.")
+
+    return nil
+}
+
+func (self *Catalog) deleteCatalog (catalogFilepath *string) error {
+    var query string
+
+    l := NewLogger("catalog")
+
+    if self.reportingChannel != nil {
+        l.Debug("Reading catalog-to-be-pruned.", "catalogFilepath", *catalogFilepath)
+
+        // Open the catalog in order to determine what path it represents.
+
+        db, err := sql.Open(DbType, *catalogFilepath)
+        if err != nil {
+            l.MergeAndLogError(err, "Could not connect to DB for prune", "catalogFilepath", *catalogFilepath)
+        } else {
+            query = 
+                "SELECT " +
+                    "`pi`.`rel_path` " +
+                "FROM " +
+                    "`path_info` `pi` " +
+                "WHERE " +
+                    "`pi`.`path_info_id` = 1"
+
+            rows, err := db.Query(query)
+            if err != nil {
+                l.MergeAndLogError(err, "Could not prepare path-info identification query (pruning)")
+            } else {
+                if rows.Next() == false {
+                    l.Error("Path-info identification result was erroneously empty (pruning).", "catalogFilepath", *catalogFilepath)
+                } else {
+                    var relPath string
+
+                    err = rows.Scan(&relPath)
+                    if err != nil {
+                        l.MergeAndLogError(err, "Could not parse path-info identification result record (pruning)")
+                    } else {
+                        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeDelete, RelPath: &relPath }
+                    }
+                }
+
+                rows.Close()
+            }
+
+            db.Close()
+        }
+    }
+
+    // Delete the catalog.
+
+    os.Remove(*catalogFilepath)
+
+    // Emit an event.
+
+    l.Debug("Catalog pruned.", "catalogFilepath", *catalogFilepath)
 
     return nil
 }
@@ -278,6 +360,8 @@ func (self *Catalog) SetPathHash (relPath *string, hash *string) (*string, error
     var query string
 
     l := NewLogger("catalog")
+
+    l.Debug("Updating path hash.", "catalogFilepath", *self.catalogFilepath, "relPath", *relPath, "hash", *hash)
 
     query = 
         "SELECT " +
@@ -297,6 +381,8 @@ func (self *Catalog) SetPathHash (relPath *string, hash *string) (*string, error
         // The record exists. Check the hash value.
 
         var currentHash string
+
+        l.Debug("Updating existing path-info record.", "catalogFilepath", *self.catalogFilepath, "relPath", *relPath)
 
         err = rows.Scan(&currentHash)
         if err != nil {
@@ -333,9 +419,13 @@ func (self *Catalog) SetPathHash (relPath *string, hash *string) (*string, error
             return nil, errorNew
         }
 
+        l.Debug("Path-info has been updated.", "catalogFilepath", *self.catalogFilepath)
+
         return &PathStateUpdated, nil
     } else {
         // The record doesn't exist. Create it.
+
+        l.Debug("Inserting path-info record.", "catalogFilepath", *self.catalogFilepath, "relPath", *relPath)
 
         query = 
             "INSERT INTO `path_info` " +
@@ -354,6 +444,8 @@ func (self *Catalog) SetPathHash (relPath *string, hash *string) (*string, error
             errorNew := l.MergeAndLogError(err, "Could not execute path-info INSERT query")
             return nil, errorNew
         }
+
+        l.Debug("Path-info has been inserted.", "catalogFilepath", *self.catalogFilepath)
     
         return &PathStateNew, nil
     }
@@ -577,7 +669,7 @@ func (self *Catalog) PruneOld () error {
     l := NewLogger("catalog")
 
     if self.allowUpdates == false {
-        l.Warning("Not checking for deletions since we're not allowed to make updates.")
+        l.Debug("Not checking for deletions since we're not allowed to make updates.")
         return nil
     }
 
@@ -610,15 +702,17 @@ func (self *Catalog) PruneOld () error {
 
             err = rows.Scan(&filename)
             if err != nil {
+                rows.Close()
+
                 errorNew := l.MergeAndLogError(err, "Could not parse filename from pruned-entries query")
                 return errorNew
             }
 
             relFilepath := self.getFilePath(&filename)
 
-            l.Debug("Reporting file as deleted.", "RelFilepath", relFilepath)
-
-            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypeFile, ChangeType: &UpdateTypeDelete, RelPath: &relFilepath }
+            if self.reportingChannel != nil {
+                self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypeFile, ChangeType: &UpdateTypeDelete, RelPath: &relFilepath }
+            }
         }
 
         rows.Close()

@@ -4,6 +4,8 @@ import (
     "os"
     "fmt"
     "runtime/pprof"
+//    "runtime"
+    "unicode/utf8"
     
     flags "github.com/jessevdk/go-flags"
 
@@ -15,7 +17,7 @@ type options struct {
     CatalogPath string      `short:"c" long:"catalog-path" description:"Path to host catalog (will be created if it doesn't exist)" required:"true"`
     HashAlgorithm string    `short:"h" long:"algorithm" default:"sha1" description:"Hashing algorithm (sha1, sha256)"`
     NoUpdates bool          `short:"n" long:"no-updates" default:"false" description:"Don't update the catalog (will also prevent reporting of deletions)"`
-    ReportFilename string   `short:"r" long:"report" default:"" description:"Write a report of changed files"`
+    ReportFilename string   `short:"r" long:"report" default:"" description:"Write a report of changed files ('-' for STDERR)"`
     ProfileFilename string  `short:"p" long:"profile" default:"" description:"Write performance profiling information"`
     ShowDebugLogging bool   `short:"d" long:"debug-log" default:"false" description:"Show debug logging"`
 }
@@ -68,11 +70,10 @@ func main() {
             l.DieIf(err, "Could not create profiler profile.")
         }
 
+//        runtime.SetCPUProfileRate(100)
         pprof.StartCPUProfile(f)
         defer pprof.StopCPUProfile()
     }
-
-    p := pfinternal.NewPath(&hashAlgorithm, reportingDataChannel)
 
     if reportFilename != "" {
         reportingDataChannel = make(chan *pfinternal.ChangeEvent, 1000)
@@ -81,9 +82,11 @@ func main() {
         go recordChanges(reportFilename, reportingDataChannel, reportingQuitChannel)
     }
 
+    p := pfinternal.NewPath(&hashAlgorithm, reportingDataChannel)
+
     c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm, reportingDataChannel)
     if err != nil {
-        l.Error("Could not open catalog.", "error", err.Error())
+        l.Error("Could not create catalog.", "error", err.Error())
         os.Exit(1)
     }
 
@@ -93,7 +96,13 @@ func main() {
         os.Exit(2)
     }
 
-// TODO(dustin): We need to find catalogs with an mtime prior to the catalogs' now-time and emit path-deleted events.
+    if allowUpdates == true {
+        err = c.PruneOldCatalogs()
+        if err != nil {
+            l.Error("Could not prune old catalogs.", "error", err.Error())
+            os.Exit(3)
+        }
+    }
 
     if reportFilename != "" {
         reportingQuitChannel <- true
@@ -103,15 +112,20 @@ func main() {
 }
 
 func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.ChangeEvent, reportingQuit <-chan bool) {
-    l := pfinternal.NewLogger("pfmain")
+    l := pfinternal.NewLogger("recordChanges")
 
-    f, err := os.Create(reportFilename)
-    if err != nil {
-        l.Error("Could not open report file.", "filename", reportFilename, "error", err.Error())
-        panic(err)
+    var f *os.File
+    if reportFilename == "-" {
+        f = os.Stderr
+    } else {
+        f, err := os.Create(reportFilename)
+        if err != nil {
+            l.Error("Could not open report file.", "filename", reportFilename, "error", err.Error())
+            panic(err)
+        }
+
+        defer f.Close()
     }
-
-    defer f.Close()
 
     l.Debug("Reporter running.")
 
@@ -119,16 +133,23 @@ func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.C
         select {
             case change := <-reportingChannel:
                 l.Debug("Catalog change.", "EntityType", *change.EntityType, "ChangeType", *change.ChangeType, "RelPath", *change.RelPath)
+
+                var effectiveRelPath string
+                if *change.EntityType == pfinternal.EntityTypePath && *change.RelPath == "" {
+                    effectiveRelPath = "."
+                } else {
+                    effectiveRelPath = *change.RelPath
+                }
+
                 f.WriteString(*change.ChangeType)
                 f.WriteString(" ")
                 f.WriteString(*change.EntityType)
                 f.WriteString(" ")
-                f.WriteString(*change.RelPath)
+                f.WriteString(effectiveRelPath)
                 f.WriteString("\n")
-            case <-reportingQuit:
-                l.Debug("Reporting terminating.")
-                return
 
+            case <-reportingQuit:
+                return
         }
     }
 }

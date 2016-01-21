@@ -4,6 +4,7 @@ import (
     "os"
     "io"
     "fmt"
+    "path"
     "hash"
 
     "path/filepath"
@@ -34,13 +35,13 @@ func (self *Path) List(path *string) (<-chan *os.FileInfo, <-chan bool, error) {
     doneChannel := make(chan bool)
 
     go func() {
-        f, err := os.Open(*path)
-        l.DieIf(err, "Could not open list path")
+        p, err := os.Open(*path)
+        l.DieIf(err, "Could not open scan path")
 
-        defer f.Close()
+        defer p.Close()
 
         for {
-            entries, err := f.Readdir(PathListBatchSize)
+            entries, err := p.Readdir(PathListBatchSize)
             if err == io.EOF {
                 break
             } else if err != nil {
@@ -71,6 +72,10 @@ func (self *Path) getHashObject () (hash.Hash, error) {
 }
 
 func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (string, error) {
+    return self.generatePathHashInner(scanPath, nil, existingCatalog)
+}
+
+func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, existingCatalog *Catalog) (string, error) {
     l := NewLogger("path")
 
     l.Debug("Generating hash for PATH.", "scanPath", *scanPath)
@@ -141,7 +146,14 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
                         }
                     }
 
-                    childHash, err = self.GeneratePathHash(&childPath, bc)
+                    var childRelScanPath string
+                    if relScanPath == nil {
+                        childRelScanPath = filename
+                    } else {
+                        childRelScanPath = path.Join(*relScanPath, filename)
+                    }
+
+                    childHash, err = self.generatePathHashInner(&childPath, &childRelScanPath, bc)
                     if err != nil {
                         newError := l.MergeAndLogError(err, "Could not generate PATH hash", "childPath", childPath, "catalogFilepath", *bc.GetCatalogFilepath())
                         return "", newError
@@ -199,18 +211,25 @@ func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (
     hash := fmt.Sprintf("%x", h.Sum(nil))
     l.Debug("Calculated PATH hash.", "scanPath", *scanPath, "hash", hash)
 
-// TODO(dustin): !! We need to pass a relative path, not an absolute one, for path portability.
-    pathState, err := existingCatalog.SetPathHash(scanPath, &hash)
+    var relScanPathNormalized string
+    if relScanPath == nil {
+        relScanPathNormalized = ""
+    } else {
+        relScanPathNormalized = *relScanPath
+    }
+
+    pathState, err := existingCatalog.SetPathHash(&relScanPathNormalized, &hash)
     if err != nil {
         newError := l.MergeAndLogError(err, "Could not update catalog path-info", "scanPath", *scanPath)
         return "", newError
     }
 
-// TODO(dustin): !! We need to pass a relative path, not an absolute one, for path portability.
-    if *pathState == PathStateNew {
-        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeCreate, RelPath: scanPath }
-    } else if (*pathState == PathStateUpdated) {
-        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeUpdate, RelPath: scanPath }
+    if self.reportingChannel != nil {
+        if *pathState == PathStateNew {
+            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeCreate, RelPath: &relScanPathNormalized }
+        } else if (*pathState == PathStateUpdated) {
+            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeUpdate, RelPath: &relScanPathNormalized }
+        }
     }
 
     return hash, nil
