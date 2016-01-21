@@ -179,7 +179,8 @@ func (self *Catalog) Open () error {
         "CREATE TABLE `path_info` (" +
             "`path_info_id` INTEGER NOT NULL PRIMARY KEY, " +
             "`rel_path` VARCHAR(1000) NOT NULL, " +
-            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NOT NULL " +
+            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NOT NULL, " +
+            "`schema_version` INTEGER NOT NULL DEFAULT 1" +
         ")"
 
     err = self.createTable (db, "path_info", &query)

@@ -57,6 +57,7 @@ f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
 
 $ touch scan_path/subdir1/aa
 $ touch scan_path/subdir2/new_file
+
 $ pathfingerprint -s scan_path -c catalog_path -r - 
 update file subdir1/aa
 create file subdir2/new_file
@@ -115,15 +116,15 @@ There are two tables: One that tracks the information for that path (`path_info`
 
 ```
 sqlite> .schema
-CREATE TABLE `path_info` (`path_info_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NOT NULL );
+CREATE TABLE `path_info` (`path_info_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NOT NULL, `schema_version` INTEGER NOT NULL DEFAULT 1);
 CREATE TABLE `catalog_entries` (`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, `filename` VARCHAR(255) NOT NULL, `hash` VARCHAR(40) NOT NULL, `mtime_epoch` INTEGER UNSIGNED NOT NULL, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `filename_idx` UNIQUE (`filename`));
 
 sqlite> select * from path_info;
-1|subdir1|722ac04c963e16f39655fd4ea0a428ff32ba8399
+1|subdir1|722ac04c963e16f39655fd4ea0a428ff32ba8399|1
 
 sqlite> select * from catalog_entries;
-1|aa|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453343619|1453343628
-2|bb|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453343620|1453343628
+1|aa|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453344685|1453344978
+2|bb|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453344689|1453344978
 ```
 
 The root catalog is simply named "root". To see the last hash that was generated, look at the hash for the single record in the `path_info` table.
@@ -133,8 +134,9 @@ $ sqlite3 catalog_path/root
 SQLite version 3.8.2 2013-12-06 14:53:30
 Enter ".help" for instructions
 Enter SQL statements terminated with a ";"
+
 sqlite> select * from path_info;
-1||f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
+1||8250cf94b55e106ce48a83a15569b866aecc1183|1
 ```
 
 
