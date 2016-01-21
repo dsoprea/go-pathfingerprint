@@ -171,8 +171,6 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
             }
         }
 
-        l.Warning("Entry.", "relChildPath", relChildPath, "childHash", childHash)
-
         io.WriteString(h, relChildPath)
         io.WriteString(h, "\000")
         io.WriteString(h, childHash)
