@@ -100,8 +100,13 @@ The catalog will usually be updated whether it's the first time you calculate a 
 ## Implementation Notes
 
 - A SQLite database is used to index each directory. These are deposited into the catalog-path.
-- We cache file hashes but not path hashes.
-- We determine if a file hash changes based on modified-times.
+- We use the cached file hashes to skip recalculation whenever possible but we recalculate path hashes every time since we still can't avoid checking every file and generating the hash is sufficiently low-cost.
+- We determine if a file hash should be recalculated based on modified-times but the modified-time does not affect the hash: If you accidentally affect a file's mtime without actually changing the file, the hash will stay constant.
+- The catalog is meant to be portable. You are able to move the contents of the scan-path and the contents of the catalog to a different place without affecting the hashes that are generated. You might use this fact to:
+  - archive the catalog and keep it in the root of whatever directory it represents
+  - keep a backup of your catalogs on a separate disk
+  - ship a copy of your files to offsite backup while keeping a local copy of your catalog for reference
+  - etc..
 - As we check a certain path for changes, we update a check-timestamp on each file in that catalog with a new timestamp. We then delete all entries older than that timestamp when we're done processing that directory. This efficiently allows us to both check differences *and* keep the catalog up to date.
 - Because we open and close a database for each path, it's far more efficient to process a directory structure with many files and not as much when there are many empty or under-utilized directories as compared to files.
 
