@@ -10,7 +10,7 @@ import (
 )
 
 type options struct {
-    CatalogPath string      `short:"c" long:"catalog-path" description:"Path to host catalog (will be created if it doesn't exist)" required:"true"`
+    CatalogPath string      `short:"c" long:"catalog-path" description:"Catalog path" required:"true"`
     HashAlgorithm string    `short:"h" long:"algorithm" default:"sha1" description:"Hashing algorithm (sha1, sha256)"`
     ShowDebugLogging bool   `short:"d" long:"debug-log" default:"false" description:"Show debug logging"`
     RecallRelPath string    `short:"p" long:"recall-rel-path" default:"" description:"If we're recalling, lookup for a specific subdirectory"`

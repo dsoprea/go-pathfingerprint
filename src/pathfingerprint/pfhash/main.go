@@ -17,7 +17,7 @@ const (
 
 type options struct {
     ScanPath string         `short:"s" long:"scan-path" description:"Path to scan" required:"true"`
-    CatalogPath string      `short:"c" long:"catalog-path" description:"Path to host catalog (will be created if it doesn't exist)" required:"true"`
+    CatalogPath string      `short:"c" long:"catalog-path" description:"Catalog path (will be created if it doesn't exist)" required:"true"`
     HashAlgorithm string    `short:"h" long:"algorithm" default:"sha1" description:"Hashing algorithm (sha1, sha256)"`
     NoUpdates bool          `short:"n" long:"no-updates" default:"false" description:"Don't update the catalog (will also prevent reporting of deletions)"`
     ReportFilename string   `short:"R" long:"report" default:"" description:"Write a report of changed files ('-' for STDERR)"`

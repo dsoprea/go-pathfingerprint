@@ -175,7 +175,7 @@ Usage:
 
 Application Options:
   -s, --scan-path=    Path to scan
-  -c, --catalog-path= Path to host catalog (will be created if it doesn't exist)
+  -c, --catalog-path= Catalog path (will be created if it doesn't exist)
   -h, --algorithm=    Hashing algorithm (sha1, sha256) (default: sha1)
   -n, --no-updates    Don't update the catalog (will also prevent reporting of deletions) (default: false)
   -R, --report=       Write a report of changed files ('-' for STDERR)
@@ -195,7 +195,7 @@ Usage:
   pflookup [OPTIONS]
 
 Application Options:
-  -c, --catalog-path=    Path to host catalog (will be created if it doesn't exist)
+  -c, --catalog-path=    Catalog path
   -h, --algorithm=       Hashing algorithm (sha1, sha256) (default: sha1)
   -d, --debug-log        Show debug logging (default: false)
   -p, --recall-rel-path= If we're recalling, lookup for a specific subdirectory
