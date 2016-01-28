@@ -10,6 +10,10 @@ import (
     "github.com/mattn/go-colorable"
 )
 
+const (
+    LogPackageVersion = 1
+)
+
 var showDebug bool = false
 
 type Logger struct {
@@ -34,15 +38,9 @@ func (self *Logger) ConfigureRootLogger () {
     if showDebug == true {
         logLevel = log.LvlDebug
     } else {
-        value, found := os.LookupEnv("PF_DEBUG")
+        value, found := os.LookupEnv("DEBUG")
         if found == true {
-            flag, err := strconv.ParseBool(value)
-            if err != nil {
-                fmt.Println("Debug value not valid (try '0' or '1').")
-                os.Exit(99)
-            } else if flag == true {
-                logLevel = log.LvlDebug
-            }
+            logLevel = log.LvlDebug
         }
     }
 
