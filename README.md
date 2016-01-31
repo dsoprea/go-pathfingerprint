@@ -46,6 +46,24 @@ da39a3ee5e6b4b0d3255bfef95601890afd80709
 
 The *second* form just provides a specific subdirectory that you want the hash for. By default, it returns for the root. The *third* form is similar, but, in this case, we're looking up the hash for a specific file.
 
+You can also ask for additional information:
+
+```
+$ pflookup -c catalog_filepath -r subdir1/aa -e
+Path name: [subdir1]
+Path ID: (4)
+File name: [aa]
+File ID: [8]
+Hash: [fb455a568071e0739cc255090f6f2d0b6fd7de3e]
+
+$ pflookup -c catalog_filepath -r subdir1 -e
+Path name: [subdir1]
+Path ID: (4)
+File name: []
+File ID: [0]
+Hash: [7a5d017ed04f3375a8489624c0c3e83baa1ef70b]
+```
+
 
 ## Dependencies
 
