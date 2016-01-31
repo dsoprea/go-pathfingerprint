@@ -77,7 +77,7 @@ func main() {
         fmt.Printf("Path name: [%s]\n", rr.RelPath)
         fmt.Printf("Path ID: (%d)\n", rr.PathId)
         fmt.Printf("File name: [%s]\n", rr.Filename)
-        fmt.Printf("File ID: [%s]\n", rr.FileId)
+        fmt.Printf("File ID: [%d]\n", rr.FileId)
         fmt.Printf("Hash: [%s]\n", rr.Hash)
     } else {
         fmt.Println(rr.Hash)
