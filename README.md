@@ -7,8 +7,6 @@ This tool will recursively and efficiently calculate a SHA1 hash for a given dir
 $ pfhash -s <scan path> -c <catalog file-path>
 ```
 
-The catalog file-path does not have to already exist.
-
 
 ## Example
 
