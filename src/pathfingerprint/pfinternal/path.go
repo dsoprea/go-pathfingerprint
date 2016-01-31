@@ -113,10 +113,12 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
                     panic(err)
                 }
 
+                if flr.wasFound == false || childHash != flr.entry.hash {
 // TODO(dustin): !! How do we or should we emit update events for paths?
-                err = existingCatalog.setFile(flr, mtime, &childHash)
-                if err != nil {
-                    panic(err)
+                    err = existingCatalog.setFile(flr, mtime, &childHash)
+                    if err != nil {
+                        panic(err)
+                    }
                 }
             } else {
                 childHash = flr.entry.hash
@@ -135,19 +137,12 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
         "hash", hash)
 
 // TODO(dustin): !! How do we or should we emit update events for paths?
-    lastHash := existingCatalog.getLastHash()
-    if lastHash == nil || *lastHash != hash {
+    lhp := existingCatalog.getLastHash()
+
+    if lhp == nil || *lhp != hash {
         err = existingCatalog.updatePath(&hash)
         if err != nil {
             panic(err)
-        }
-
-        if self.reportingChannel != nil {
-            if lastHash == nil {
-                self.reportingChannel <- &ChangeEvent { EntityType: EntityTypePath, ChangeType: UpdateTypeCreate, RelPath: *relPath }
-            } else {
-                self.reportingChannel <- &ChangeEvent { EntityType: EntityTypePath, ChangeType: UpdateTypeUpdate, RelPath: *relPath }
-            }
         }
     }
 
