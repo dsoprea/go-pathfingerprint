@@ -12,26 +12,25 @@ The catalog file-path does not have to already exist.
 
 ## Example
 
-Calculate the hashes on an expensive (hundreds of directories, tens of thousands of files with an average size of ~5M) path:
+Calculate the hashes on a path (with 1211 directories, 33648 files, and an average size of ~5M):
 
 ```
 $ time pfhash -s photos_path -c catalog_file
-8250cf94b55e106ce48a83a15569b866aecc1183
+7754b1bf3ee1c4cc7a75b23c366be5cf221b2698
 
-real    36m59.201s
-user    6m47.892s
-sys     3m24.316s
+real    30m15.737s
+user    8m58.865s
+sys     4m26.641s
 ```
 
-Run it again and see the savings:
+Run it again:
 
 ```
-$ time pfhash -s photos_path -c catalog_file
-8250cf94b55e106ce48a83a15569b866aecc1183
+7754b1bf3ee1c4cc7a75b23c366be5cf221b2698
 
-real    3m16.700s
-user    0m8.928s
-sys     0m8.112s
+real    5m34.390s
+user    0m17.909s
+sys     0m14.914s
 ```
 
 If you positively don't want to update the hashes nor do you want a report of changes, use the `pflookup` command:
