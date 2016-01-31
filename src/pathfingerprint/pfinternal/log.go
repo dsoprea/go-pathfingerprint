@@ -4,7 +4,6 @@ import (
     "fmt"
     "errors"
     "os"
-    "strconv"
 
     log "gopkg.in/inconshreveable/log15.v2"
     "github.com/mattn/go-colorable"
@@ -31,21 +30,22 @@ func NewLogger(context string) *Logger {
 }
 
 func (self *Logger) ConfigureRootLogger () {
-    screenHandler := log.StreamHandler(colorable.NewColorableStdout(), log.TerminalFormat())
+    sh := log.StreamHandler(colorable.NewColorableStdout(), log.TerminalFormat())
 
     logLevel := log.LvlInfo
 
     if showDebug == true {
         logLevel = log.LvlDebug
     } else {
-        value, found := os.LookupEnv("DEBUG")
+        _, found := os.LookupEnv("DEBUG")
         if found == true {
             logLevel = log.LvlDebug
         }
     }
 
-    filterHandler := log.LvlFilterHandler(logLevel, screenHandler)
-    log.Root().SetHandler(filterHandler)
+    fh := log.LvlFilterHandler(logLevel, sh)
+    cfh := log.CallerFileHandler(fh)
+    log.Root().SetHandler(cfh)
 }
 
 func (self *Logger) Debug (message string, ctx ...interface{}) {

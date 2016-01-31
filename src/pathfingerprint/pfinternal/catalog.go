@@ -1,30 +1,26 @@
 package pfinternal
 
 import (
-    "os"
     "path"
-    "io"
     "errors"
     "time"
-//    "reflect"
 )
 
 const (
     DbType = "sqlite3"
-    CatalogPathListBatchSize = 3
-    RootCatalogFilename = "root"
+//    CatalogPathListBatchSize = 3
 )
 
+// TODO(dustin): !! We ended-up going the other direction with our errors. Deimplement these?
 var ErrNoHash = errors.New("no hash recorded for the filename")
 var ErrFileChanged = errors.New("mtime for filename does not match")
 
 type Catalog struct {
-    catalogPath *string
-    scanPath *string
+    scanPath string
     allowUpdates bool
-    relScanPath *string
-    catalogFilename *string
-    catalogFilepath *string
+    lastHash *string
+
+    pd pathDescriptor
     nowTime time.Time
     nowEpoch int64
     reportingChannel chan<- *ChangeEvent
@@ -32,8 +28,10 @@ type Catalog struct {
     cr *catalogResource
 }
 
-func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashAlgorithm *string, reportingChannel chan<- *ChangeEvent) (*Catalog, error) {
+func NewCatalog(catalogResource *catalogResource, scanPath *string, allowUpdates bool, hashAlgorithm *string, reportingChannel chan<- *ChangeEvent) (*Catalog, error) {
     l := NewLogger("catalog")
+
+    l.Debug("Creating catalog.")
 
     cc, err := newCatalogCommon(hashAlgorithm)
     if err != nil {
@@ -41,308 +39,303 @@ func NewCatalog (catalogPath *string, scanPath *string, allowUpdates bool, hashA
         return nil, errorNew
     }
 
-    catalogFilename, err := cc.getCatalogFilename(nil)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not formulate catalog filename (catalog)")
-        return nil, errorNew
-    }
-
-    catalogFilepath := path.Join(*catalogPath, *catalogFilename)
-
     nowTime := time.Now()
     nowEpoch := nowTime.Unix()
 
     l.Debug("Current time.", "nowEpoch", nowEpoch)
 
-    e := string("")
-    cr, err := newCatalogResource(&catalogFilepath, &e, hashAlgorithm)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not create catalog-resource object (catalog)")
-        return nil, errorNew
-    }
-
     c := Catalog { 
-            catalogPath: catalogPath, 
-            scanPath: scanPath, 
+            scanPath: *scanPath, 
             allowUpdates: allowUpdates,
-            relScanPath: nil, 
-            catalogFilename: catalogFilename, 
-            catalogFilepath: &catalogFilepath,
             nowTime: nowTime,
             nowEpoch: nowEpoch,
             reportingChannel: reportingChannel,
             cc: cc,
-            cr: cr,
+            cr: catalogResource,
     }
+
+    relPath := ""
+    pdp, hash, err := c.ensurePathRecord(&relPath)
+    if err != nil {
+        panic(err)
+    }
+
+    c.pd = *pdp
+    c.lastHash = hash
 
     return &c, nil
 }
 
-func (self *Catalog) GetCatalogPath () *string {
-    return self.catalogPath
-}
-
-func (self *Catalog) GetCatalogFilepath () *string {
-    return self.catalogFilepath
-}
-
-func (self *Catalog) BranchCatalog (childPathName *string) (*Catalog, error) {
-    var scanPath string
-
+func (self *Catalog) BranchCatalog(childPathName *string) (*Catalog, error) {
     l := NewLogger("catalog")
-    
-    scanPath = path.Join(*self.scanPath, *childPathName)
 
-    var relScanPath string
-    if self.relScanPath == nil {
-        relScanPath = *childPathName
-    } else {
-        relScanPath = path.Join(*self.relScanPath, *childPathName)
-    }
+    l.Debug("Branching catalog.", "childPathName", *childPathName)
 
-    catalogFilename, err := self.cc.getCatalogFilename(&relScanPath)
+    scanPath := path.Join(self.scanPath, *childPathName)
+    relPath := path.Join(self.pd.GetRelPath(), *childPathName)
+
+    pd, hash, err := self.ensurePathRecord(&relPath)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not formulate catalog filename (branch catalog)")
-        return nil, errorNew
-    }
-
-    catalogFilepath := path.Join(*self.catalogPath, *catalogFilename)
-
-    cr, err := newCatalogResource(&catalogFilepath, &relScanPath, self.cc.HashAlgorithm())
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not create catalog-resource object (branch catalog)")
-        return nil, errorNew
+        panic(err)
     }
 
     c := Catalog { 
-            catalogPath: self.catalogPath, 
-            scanPath: &scanPath, 
+            scanPath: scanPath, 
             allowUpdates: self.allowUpdates,
-            relScanPath: &relScanPath, 
-            catalogFilename: catalogFilename, 
-            catalogFilepath: &catalogFilepath,
+            lastHash: hash,
+            pd: *pd,
             nowTime: self.nowTime,
             nowEpoch: self.nowEpoch,
             reportingChannel: self.reportingChannel,
             cc: self.cc,
-            cr: cr,
+            cr: self.cr,
     }
 
     return &c, nil
 }
 
-func (self *Catalog) Open () error {
-    l := NewLogger("catalog")
-
-    err := self.cr.Open()
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not close catalog resource")
-        return errorNew
-    }
-
-    return nil
+func (self *Catalog) getLastHash() *string {
+    return self.lastHash
 }
 
-func (self *Catalog) Close () error {
+func (self *Catalog) ensurePathRecord(relPath *string) (*pathDescriptor, *string, error) {
     l := NewLogger("catalog")
 
-    err := self.cr.Close()
+    l.Debug("Ensuring path record.", "relPath", *relPath)
+
+    plr, err := self.lookupPath(relPath)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not close catalog resource")
-        return errorNew
+        panic(err)
     }
 
-    if self.allowUpdates == true {
-        l.Debug("Updating catalog file times.", "catalogFilepath", *self.catalogFilepath)
+    var pd *pathDescriptor
+    var hash *string
 
-        err := os.Chtimes(*self.catalogFilepath, self.nowTime, self.nowTime)
+    if plr.wasFound == true {
+        pd = newRecordedPathDescriptor(relPath, plr.entry.id)
+        hash = &plr.entry.hash
+    } else if self.allowUpdates == true {
+        pathInfoId, err := self.createPath(relPath)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not update catalog times")
-            return errorNew
+            panic(err)
         }
+
+        pd = newRecordedPathDescriptor(relPath, pathInfoId)
+    } else {
+        pd = newUnknownPathDescriptor(relPath)
     }
 
-    l.Debug("Catalog mtime updated.", "catalogFilepath", *self.catalogFilepath)
+    l.Debug("Path record ensured.", "relPath", *relPath)
 
+    return pd, hash, nil
+}
+
+func (self *Catalog) Open() error {
     return nil
 }
 
-func (self *Catalog) PruneOldCatalogs () error {
-    l := NewLogger("catalog")
-
-    l.Debug("Pruning old catalogs.")
-
-    p, err := os.Open(*self.catalogPath)
-    l.DieIf(err, "Could not open catalog path")
-
-    defer p.Close()
-
-    for {
-        entries, err := p.Readdir(CatalogPathListBatchSize)
-        if err == io.EOF {
-            break
-        } else if err != nil {
-            l.DieIf(err, "Could not get next catalog")
+func (self *Catalog) Close() error {
+    if self.allowUpdates == true {
+        err := self.PruneOldFiles()
+        if err != nil {
+            panic(err)
         }
 
-        for i := range entries {
-            e := entries[i]
-            mtimeTime := e.ModTime()
-            mtimeEpoch := mtimeTime.Unix()
-            catalogFilename := e.Name()
-            catalogFilepath := path.Join(*self.catalogPath, catalogFilename)
-
-            if mtimeEpoch >= self.nowEpoch {
-                continue
-            }
-
-            l.Debug("Pruning catalog.", "catalogFilename", catalogFilename, "mtimeTime", mtimeTime, "mtimeEpoch", mtimeEpoch, "nowTime", self.nowTime, "nowEpoch", self.nowEpoch)
-
-            // The catalog hasn't been touched. It must've been deleted.
-
-            self.deleteCatalog(&catalogFilepath)
+        err = self.PruneOldPaths()
+        if err != nil {
+            panic(err)
         }
-    }
-
-    l.Debug("Finished pruning old catalogs.")
-
-    return nil
-}
-
-func (self *Catalog) deleteCatalog (catalogFilepath *string) error {
-    l := NewLogger("catalog")
-
-    doRelPathLookup := self.reportingChannel != nil
-    relPath, err := deleteCatalog(catalogFilepath, self.cc.HashAlgorithm(), doRelPathLookup)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "There might have been an issue deleting the catalog", "catalogFilepath", *catalogFilepath)
-        return errorNew
-    }
-
-    if relPath == nil {
-        l.LogError("We couldn't read a relative-path from the catalog to be pruned, so we can't emit an event for it.", "catalogFilepath", *catalogFilepath)
-    } else if self.reportingChannel != nil {
-        self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeDelete, RelPath: relPath }
     }
 
     return nil
 }
-
+/*
 // Update the catalog with the info for the path that the catalog represents. 
 // This action allows us to determine when the directory is new or when the 
 // contents have changed. 
-func (self *Catalog) SetPathHash (relPath *string, hash *string) (*string, error) {
+func (self *Catalog) setPathHash(hash *string) (int, error) {
     l := NewLogger("catalog")
 
-    ps, err := self.cr.setPathHash(relPath, hash)
+    ps, err := self.cr.setPathHash(self.pd.GetRelPath(), hash)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not set path hash (catalog)")
-        return nil, errorNew
+        errorNew := l.MergeAndLogError(err, "Could not set path hash")
+        return 0, errorNew
     }
 
     return ps, nil
 }
+*/
 
-func (self *Catalog) Lookup (filename *string) (*lookupResult, error) {
+func (self *Catalog) lookupFile(filename *string) (*fileLookupResult, error) {
     l := NewLogger("catalog")
 
-    var relScanPathPhrase string
-    if self.relScanPath == nil {
-        relScanPathPhrase = ""
+    l.Debug("Looking up file.", "relPath", self.pd.GetRelPath(), "filename", *filename)
+
+    var flr *fileLookupResult
+    var err error
+
+    if self.pd.GetPathInfoId() == 0 {
+        // The path record wasn't even found and we weren't allowed to create 
+        // it.
+
+        flr = newNotFoundFileLookupResult(&self.pd, filename)
     } else {
-        relScanPathPhrase = *self.relScanPath
+        flr, err = self.cr.lookupFile(&self.pd, filename)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not lookup filename", "relPath", self.pd.GetRelPath())
+            return nil, errorNew
+        }
+
+        if flr.wasFound == true && self.allowUpdates == true {
+            // Update the timestamp of the record so that we can determine 
+            // which records no longer represent valid files.
+
+            l.Debug("Setting last_check_epoch for entry", "relPath", self.pd.GetRelPath(), "filename", *filename, "last_check_epoch", self.nowEpoch)
+
+            err = self.cr.updateLastFileCheck(flr, self.nowEpoch)
+            if err != nil {
+                errorNew := l.MergeAndLogError(err, "Could not update last-check", "relPath", self.pd.GetRelPath(), "filename", *filename)
+                return nil, errorNew
+            }
+        }
     }
 
-    lr, err := self.cr.lookup(filename)
+    l.Debug("File lookup result.", "found", flr.wasFound, "entry", flr.entry)
+
+    return flr, nil
+}
+
+func (self *Catalog) lookupPath(relPath *string) (*pathLookupResult, error) {
+    l := NewLogger("catalog")
+
+    l.Debug("Doing path lookup.", "relPath", *relPath)
+
+    plr, err := self.cr.lookupPath(relPath)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not lookup filename", "relScanPathPhrase", relScanPathPhrase)
+        errorNew := l.MergeAndLogError(err, "Could not lookup path", "relPath", relPath)
         return nil, errorNew
     }
 
-    if lr.WasFound == true && self.allowUpdates == true {
+    if plr.wasFound == true && self.allowUpdates == true {
         // Update the timestamp of the record so that we can determine 
         // which records no longer represent valid files.
 
-        l.Debug("Setting last_check_epoch for entry", "relScanPathPhrase", relScanPathPhrase, "filename", *filename, "last_check_epoch", self.nowEpoch)
+        l.Debug("Setting last_check_epoch for path", "relPath", *relPath, "last_check_epoch", self.nowEpoch)
 
-        err = self.cr.updateLastCheck(lr.entry.id, self.nowEpoch)
+        err = self.cr.updateLastPathCheck(plr, self.nowEpoch)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not update last-check", "relScanPathPhrase", relScanPathPhrase, "filename", *filename)
+            errorNew := l.MergeAndLogError(err, "Could not update last-check", "relPath", relPath)
             return nil, errorNew
         }
     }
 
-    return lr, nil
+    l.Debug("Path lookup finished.", "relPath", *relPath)
+
+    return plr, nil
 }
 
-func (self *Catalog) getFilePath (filename *string) string {
-    var relFilepath string
-
-    if self.relScanPath != nil {
-        relFilepath = path.Join(*self.relScanPath, *filename)
-    } else {
-        relFilepath = *filename
-    }
-
-    return relFilepath
-}
-
-func (self *Catalog) Update (lr *lookupResult, mtime int64, hash *string) error {
+func (self *Catalog) setFile(flr *fileLookupResult, mtime int64, hash *string) error {
     l := NewLogger("catalog")
 
-    if lr.WasFound == true && lr.entry.mtime == mtime {
-        // The entry already existed and the mtime matched.
+    if self.reportingChannel != nil {
+        relFilepath := path.Join(self.pd.GetRelPath(), flr.filename)
 
-        return nil
+        if flr.wasFound == true {
+            self.reportingChannel <- &ChangeEvent { EntityType: EntityTypeFile, ChangeType: UpdateTypeUpdate, RelPath: relFilepath }
+        } else {
+            self.reportingChannel <- &ChangeEvent { EntityType: EntityTypeFile, ChangeType: UpdateTypeCreate, RelPath: relFilepath }
+        }
     }
 
-    if self.reportingChannel != nil {
-        relFilepath := self.getFilePath(lr.filename)
-
-        if lr.WasFound == true {
-            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypeFile, ChangeType: &UpdateTypeUpdate, RelPath: &relFilepath }
-        } else {
-            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypeFile, ChangeType: &UpdateTypeCreate, RelPath: &relFilepath }
+    if self.allowUpdates == true {
+        err := self.cr.setFile(flr, mtime, hash, self.nowEpoch)
+        if err != nil {
+            errorNew := l.MergeAndLogError(err, "Could not create/update file record", "filename", flr.filename)
+            return errorNew
         }
+    }
+
+    return nil
+}
+
+// Create a new path record for the given path.
+func (self *Catalog) createPath(relPath *string) (pathInfoId int, err error) {
+    l := NewLogger("catalog")
+
+    if self.reportingChannel != nil {
+        self.reportingChannel <- &ChangeEvent { EntityType: EntityTypePath, ChangeType: UpdateTypeCreate, RelPath: *relPath }
+    }
+
+    // This should never come up.
+    if self.allowUpdates == false {
+        panic(errors.New("We can't create a path record. We're not allowed."))
+    }
+
+    pathInfoId, err = self.cr.createPath(relPath, self.nowEpoch)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not create path record", "relPath", *relPath)
+        return 0, errorNew
+    }
+
+    return pathInfoId, nil
+}
+
+// Update the path that this catalog object represents.
+func (self *Catalog) updatePath(hash *string) error {
+    l := NewLogger("catalog")
+
+    if self.reportingChannel != nil {
+        self.reportingChannel <- &ChangeEvent { EntityType: EntityTypePath, ChangeType: UpdateTypeUpdate, RelPath: self.pd.GetRelPath() }
     }
 
     if self.allowUpdates == false {
         // We were told to not make any changes.
-
         return nil
     }
 
-    err := self.cr.update(lr, mtime, hash, self.nowEpoch)
+    err := self.cr.updatePath(&self.pd, hash)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not update record", "catalogFilepath", self.catalogFilepath, "filename", lr.filename)
+        errorNew := l.MergeAndLogError(err, "Could not update path record", "pathInfoId", self.pd.GetPathInfoId())
         return errorNew
     }
 
     return nil
 }
 
-// Delete all records that haven't been touched in this run (because all of the 
-// ones that match known files have been updated to a later timestamp than they 
-// had).
-func (self *Catalog) PruneOldEntries () error {
+// Delete all file records that haven't been touched in this run (because all 
+// of the ones that match known files have been updated to a later timestamp 
+// than they had).
+func (self *Catalog) PruneOldFiles() error {
     l := NewLogger("catalog")
 
     if self.allowUpdates == false {
-        l.Debug("Not checking for deletions since we're not allowed to make updates.")
+        l.Debug("Not checking for FILE deletions since we're not allowed to make updates.")
         return nil
     }
 
-    if self.reportingChannel != nil {
-        err := self.cr.getOld(self.nowEpoch, self.reportingChannel)
-        if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not report old file entries")
-            return errorNew
-        }
+    err := self.cr.pruneOldFiles(self.nowEpoch, self.reportingChannel)
+    if err != nil {
+        errorNew := l.MergeAndLogError(err, "Could not prune old FILE entries")
+        return errorNew
     }
 
-    err := self.cr.pruneOld(self.nowEpoch)
+    return nil
+}
+
+// Delete all path records that haven't been touched in this run (because all 
+// of the ones that match known files have been updated to a later timestamp 
+// than they had).
+func (self *Catalog) PruneOldPaths() error {
+    l := NewLogger("catalog")
+
+    if self.allowUpdates == false {
+        l.Debug("Not checking for PATH deletions since we're not allowed to make updates.")
+        return nil
+    }
+
+    err := self.cr.pruneOldPaths(self.nowEpoch, self.reportingChannel)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prune old file entries")
+        errorNew := l.MergeAndLogError(err, "Could not prune old PATH entries")
         return errorNew
     }
 

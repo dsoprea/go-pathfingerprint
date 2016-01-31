@@ -17,7 +17,7 @@ const (
 
 type options struct {
     ScanPath string         `short:"s" long:"scan-path" description:"Path to scan" required:"true"`
-    CatalogPath string      `short:"c" long:"catalog-path" description:"Catalog path (will be created if it doesn't exist)" required:"true"`
+    CatalogFilepath string  `short:"c" long:"catalog-filepath" description:"Catalog file-path (will be created if it doesn't exist)" required:"true"`
     HashAlgorithm string    `short:"h" long:"algorithm" default:"sha1" description:"Hashing algorithm (sha1, sha256)"`
     NoUpdates bool          `short:"n" long:"no-updates" default:"false" description:"Don't update the catalog (will also prevent reporting of deletions)"`
     ReportFilename string   `short:"R" long:"report" default:"" description:"Write a report of changed files ('-' for STDERR)"`
@@ -37,8 +37,17 @@ func readOptions () *options {
 }
 
 func main() {
+    defer func() {
+        if r := recover(); r != nil {
+            err := r.(error)
+
+            fmt.Printf("Critical: %s\n", err.Error())
+            os.Exit(1)
+        }
+    }()
+
     var scanPath string
-    var catalogPath string
+    var catalogFilepath string
     var hashAlgorithm string
     var allowUpdates bool
     var reportFilename string
@@ -47,7 +56,7 @@ func main() {
     o := readOptions()
 
     scanPath = o.ScanPath
-    catalogPath = o.CatalogPath
+    catalogFilepath = o.CatalogFilepath
     hashAlgorithm = o.HashAlgorithm
     allowUpdates = o.NoUpdates == false
     reportFilename = o.ReportFilename
@@ -70,8 +79,7 @@ func main() {
 
         f, err := os.Create(profileFilename)
         if err != nil {
-            l.Error("Could not create profiler profile.", "error", err.Error())
-            os.Exit(2)
+            panic(err)
         }
 
 //        runtime.SetCPUProfileRate(100)
@@ -86,32 +94,38 @@ func main() {
         go recordChanges(reportFilename, reportingDataChannel, reportingQuitChannel)
     }
 
-    err = os.MkdirAll(catalogPath, PathCreationMode)
-    if err != nil {
-        l.Error("Could not create catalog path", "error", err.Error())
-        os.Exit(4)
-    }
-
     p := pfinternal.NewPath(&hashAlgorithm, reportingDataChannel)
 
-    c, err = pfinternal.NewCatalog(&catalogPath, &scanPath, allowUpdates, &hashAlgorithm, reportingDataChannel)
+    cr, err := pfinternal.NewCatalogResource(&catalogFilepath, &hashAlgorithm)
     if err != nil {
-        l.Error("Could not create catalog.", "error", err.Error())
-        os.Exit(5)
+        panic(err)
     }
 
-    hash, err := p.GeneratePathHash(&scanPath, c)
+    err = cr.Open()
     if err != nil {
-        l.Error("Could not generate hash.", "error", err.Error())
-        os.Exit(6)
+        panic(err)
     }
 
-    if allowUpdates == true {
-        err = c.PruneOldCatalogs()
-        if err != nil {
-            l.Error("Could not prune old catalogs.", "error", err.Error())
-            os.Exit(7)
-        }
+    defer cr.Close()
+
+    c, err = pfinternal.NewCatalog(cr, &scanPath, allowUpdates, &hashAlgorithm, reportingDataChannel)
+    if err != nil {
+        panic(err)
+    }
+
+    err = c.Open()
+    if err != nil {
+        panic(err)
+    }
+
+    defer c.Close()
+
+    l.Debug("Generating root hash.")
+
+    relPath := ""
+    hash, err := p.GeneratePathHash(&scanPath, &relPath, c)
+    if err != nil {
+        panic(err)
     }
 
     if reportFilename != "" {
@@ -130,7 +144,7 @@ func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.C
     } else {
         f, err := os.Create(reportFilename)
         if err != nil {
-            l.DieIf(err, "Could not open report file.", "filename", reportFilename)
+            panic(err)
         }
 
         defer f.Close()
@@ -141,18 +155,21 @@ func recordChanges (reportFilename string, reportingChannel <-chan *pfinternal.C
     for {
         select {
             case change := <-reportingChannel:
-                l.Debug("Catalog change.", "EntityType", *change.EntityType, "ChangeType", *change.ChangeType, "RelPath", *change.RelPath)
+                changeTypeName := pfinternal.UpdateTypeName(change.ChangeType)
+                entityTypeName := pfinternal.EntityTypeName(change.EntityType)
+
+                l.Debug("Catalog change.", "EntityType", entityTypeName, "ChangeType", changeTypeName, "RelPath", change.RelPath)
 
                 var effectiveRelPath string
-                if *change.EntityType == pfinternal.EntityTypePath && *change.RelPath == "" {
+                if change.EntityType == pfinternal.EntityTypePath && change.RelPath == "" {
                     effectiveRelPath = "."
                 } else {
-                    effectiveRelPath = *change.RelPath
+                    effectiveRelPath = change.RelPath
                 }
 
-                f.WriteString(*change.ChangeType)
+                f.WriteString(changeTypeName)
                 f.WriteString(" ")
-                f.WriteString(*change.EntityType)
+                f.WriteString(entityTypeName)
                 f.WriteString(" ")
                 f.WriteString(effectiveRelPath)
                 f.WriteString("\n")

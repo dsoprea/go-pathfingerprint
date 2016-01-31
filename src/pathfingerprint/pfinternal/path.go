@@ -6,9 +6,9 @@ import (
     "fmt"
     "path"
     "hash"
-    "io/ioutil"
 
-    "path/filepath"
+    "io/ioutil"
+    "runtime/debug"
 )
 
 const (
@@ -41,55 +41,33 @@ func (self *Path) getHashObject() (hash.Hash, error) {
     return h, nil
 }
 
-func (self *Path) GeneratePathHash(scanPath *string, existingCatalog *Catalog) (string, error) {
-    return self.generatePathHashInner(scanPath, nil, existingCatalog)
-}
-
-func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, existingCatalog *Catalog) (string, error) {
+// Generate a hash for a path.
+func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCatalog *Catalog) (hash string, err error) {
     l := NewLogger("path")
 
-    l.Debug("Generating hash for PATH.", "scanPath", *scanPath)
+    defer func() {
+        if r := recover(); r != nil {
+            hash = ""
+            originalErr := r.(error)
 
-    f, err := os.Open(*scanPath)
-    if err != nil {
-        newError := l.MergeAndLogError(err, "Could not open scan-path", "scanPath", *scanPath)
-        return "", newError
-    }
+            fmt.Printf("Error: %s\n", debug.Stack())
 
-    f.Close()
-
-    if existingCatalog != nil {
-        err := existingCatalog.Open()
-        if err != nil {
-            newError := l.MergeAndLogError(err, "Could not open catalog")
-            return "", newError
+            err = l.MergeAndLogError(originalErr, "Could not generate path hash.", "scanPath", *scanPath, "relPath", *relPath)
         }
+    }()
 
-        closeCatalog := func () {
-            l.Debug("Closing catalog.", "scanPath", *scanPath)
-
-            existingCatalog.PruneOldEntries()
-
-            err = existingCatalog.Close()
-            if err != nil {
-                l.MergeAndLogError(err, "Could not close catalog")
-                return
-            }
-        }
-
-        defer closeCatalog()
-    }
+    l.Debug("Generating hash for PATH.", "scanPath", *relPath)
 
     h, err := self.getHashObject()
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get hash object (generate-path-hash)")
-        return "", errorNew
+        panic(err)
     }
 
+    // We need this list to be sorted (read: complete) in order to produce 
+    // deterministic results.
     entries, err := ioutil.ReadDir(*scanPath)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not list path", "path", *scanPath)
-        return "", errorNew
+        panic(err)
     }
 
     for _, entry := range entries {
@@ -98,76 +76,45 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
         filename := entry.Name()
         isDir := entry.IsDir()
 
-        childPath := filepath.Join(*scanPath, filename)
-
-        var relChildPath string
-
-        if relScanPath != nil {
-            relChildPath = filepath.Join(*relScanPath, filename)
-        } else {
-            relChildPath = filename
-        }
+        childPath := path.Join(*scanPath, filename)
+        relChildPath := path.Join(*relPath, filename)
 
         if isDir == true {
             var bc *Catalog
 
-            if existingCatalog != nil {
-                bc, err = existingCatalog.BranchCatalog(&filename)
-                if err != nil {
-                    newError := l.MergeAndLogError(err, "Could not branch catalog", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "scanPath", childPath)
-                    return "", newError
-                }
-            }
-
-            var childRelScanPath string
-            if relScanPath == nil {
-                childRelScanPath = filename
-            } else {
-                childRelScanPath = path.Join(*relScanPath, filename)
-            }
-
-            childHash, err = self.generatePathHashInner(&childPath, &childRelScanPath, bc)
+            bc, err = existingCatalog.BranchCatalog(&filename)
             if err != nil {
-                newError := l.MergeAndLogError(err, "Could not generate PATH hash", "childPath", childPath, "catalogFilepath", *bc.GetCatalogFilepath())
-                return "", newError
+                panic(err)
+            }
+
+            childHash, err = self.GeneratePathHash(&childPath, &relChildPath, bc)
+            if err != nil {
+                panic(err)
             }
         } else {
-            var lr *lookupResult
-
             s, err := os.Stat(childPath)
             if err != nil {
-                newError := l.MergeAndLogError(err, "Could not stat child file", "childPath", childPath)
-                return "", newError
+                panic(err)
             }
 
             mtime := s.ModTime().Unix()
 
-            if existingCatalog != nil {
-                lr, err = existingCatalog.Lookup(&filename)
-                if err != nil {
-                    newError := l.MergeAndLogError(err, "Could not lookup filename hash", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "filename", filename, "mtime", mtime)
-                    return "", newError
-                } else if lr.WasFound == false || lr.entry.mtime != mtime {
-                    childHash = ""
-                } else {
-                    childHash = lr.entry.hash
-                }
-            }
-
-            if childHash == "" {
+            flr, err := existingCatalog.lookupFile(&filename)
+            if err != nil {
+                panic(err)
+            } else if flr.wasFound == false || flr.entry.mtime != mtime {
                 childHash, err = self.GenerateFileHash(&childPath)
                 if err != nil {
-                    newError := l.MergeAndLogError(err, "Could not generate FILE hash", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "childPath", childPath)
-                    return "", newError
+                    panic(err)
                 }
-            }
 
-            if existingCatalog != nil {
-                err = existingCatalog.Update(lr, mtime, &childHash)
+// TODO(dustin): !! How do we or should we emit update events for paths?
+                err = existingCatalog.setFile(flr, mtime, &childHash)
                 if err != nil {
-                    newError := l.MergeAndLogError(err, "Could not update catalog", "catalogFilepath", *existingCatalog.GetCatalogFilepath(), "childPath", childPath)
-                    return "", newError
+                    panic(err)
                 }
+            } else {
+                childHash = flr.entry.hash
             }
         }
 
@@ -177,56 +124,56 @@ func (self *Path) generatePathHashInner(scanPath *string, relScanPath *string, e
         io.WriteString(h, "\000")
     }
 
-    hash := fmt.Sprintf("%x", h.Sum(nil))
-    l.Debug("Calculated PATH hash.", "scanPath", *scanPath, "hash", hash)
+    hash = fmt.Sprintf("%x", h.Sum(nil))
+    l.Debug("Calculated PATH hash.", "relPath", *relPath, "hash", hash)
 
-    var relScanPathNormalized string
-    if relScanPath == nil {
-        relScanPathNormalized = ""
-    } else {
-        relScanPathNormalized = *relScanPath
-    }
+// TODO(dustin): !! How do we or should we emit update events for paths?
+    lastHash := existingCatalog.getLastHash()
+    if lastHash == nil || *lastHash != hash {
+        err = existingCatalog.updatePath(&hash)
+        if err != nil {
+            panic(err)
+        }
 
-    pathState, err := existingCatalog.SetPathHash(&relScanPathNormalized, &hash)
-    if err != nil {
-        newError := l.MergeAndLogError(err, "Could not update catalog path-info", "scanPath", *scanPath)
-        return "", newError
-    }
-
-    if self.reportingChannel != nil {
-        if *pathState == PathStateNew {
-            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeCreate, RelPath: &relScanPathNormalized }
-        } else if (*pathState == PathStateUpdated) {
-            self.reportingChannel <- &ChangeEvent { EntityType: &EntityTypePath, ChangeType: &UpdateTypeUpdate, RelPath: &relScanPathNormalized }
+        if self.reportingChannel != nil {
+            if lastHash == nil {
+                self.reportingChannel <- &ChangeEvent { EntityType: EntityTypePath, ChangeType: UpdateTypeCreate, RelPath: *relPath }
+            } else {
+                self.reportingChannel <- &ChangeEvent { EntityType: EntityTypePath, ChangeType: UpdateTypeUpdate, RelPath: *relPath }
+            }
         }
     }
 
     return hash, nil
 }
 
-func (self *Path) GenerateFileHash(filepath *string) (string, error) {
+func (self *Path) GenerateFileHash(filepath *string) (hash string, err error) {
     l := NewLogger("path")
+
+    defer func() {
+        if r := recover(); r != nil {
+            hash = ""
+            originalErr := r.(error)
+
+            err = l.MergeAndLogError(originalErr, "Could not generate hash", "filepath", *filepath)
+        }
+    }()
 
     l.Debug("Generating hash for FILEPATH.", "filepath", *filepath)
 
     f, err := os.Open(*filepath)
     if err != nil {
-        newError := l.MergeAndLogError(err, "Could not open filepath", "filepath", *filepath)
-        return "", newError
+        panic(err)
     }
 
-    closeFile := func () {
+    defer func() {
         l.Debug("Closing file (generated hash).", "filepath", *filepath)
-
         f.Close()
-    }
-
-    defer closeFile()
+    }()
 
     h, err := self.getHashObject()
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get hash object (generate-file-hash)")
-        return "", errorNew
+        panic(err)
     }
 
     part := make([]byte, h.BlockSize() * 2)
@@ -236,14 +183,13 @@ func (self *Path) GenerateFileHash(filepath *string) (string, error) {
         if err == io.EOF {
             break
         } else if err != nil {
-            newError := l.MergeAndLogError(err, "Could not read file part for hash", "filepath", *filepath)
-            return "", newError
+            panic(err)
         }
 
         h.Write(part)
     }
 
-    hash := fmt.Sprintf("%x", h.Sum(nil))
+    hash = fmt.Sprintf("%x", h.Sum(nil))
     l.Debug("Calculated FILE hash.", "hash", hash, "filepath", *filepath)
 
     return hash, nil

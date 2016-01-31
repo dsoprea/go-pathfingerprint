@@ -2,11 +2,11 @@ package main
 
 import (
     "os"
-    "fmt"
+//    "fmt"
     
     flags "github.com/jessevdk/go-flags"
 
-    "pathfingerprint/pfinternal"
+//    "pathfingerprint/pfinternal"
 )
 
 type options struct {
@@ -28,6 +28,7 @@ func readOptions () *options {
 }
 
 func main() {
+/*
     var catalogPath string
     var hashAlgorithm string
     var relPath string
@@ -60,4 +61,5 @@ func main() {
     }
 
     fmt.Printf("%s\n", *hash)
+*/
 }

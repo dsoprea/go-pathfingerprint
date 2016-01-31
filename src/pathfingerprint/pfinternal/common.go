@@ -1,7 +1,6 @@
 package pfinternal
 
 import (
-    "fmt"
     "hash"
 )
 
@@ -31,25 +30,4 @@ func (self *catalogCommon) getHashObject () (hash.Hash, error) {
     }
 
     return h, nil
-}
-
-func (self *catalogCommon) getCatalogFilename (relScanPath *string) (*string, error) {
-    l := NewLogger("catalog_common")
-
-    if relScanPath == nil {
-        filename := RootCatalogFilename
-        return &filename, nil
-    } else {
-
-        h, err := self.getHashObject()
-        if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not get hash object (getCatalogFilename)")
-            return nil, errorNew
-        }
-
-        h.Write([]byte(*relScanPath))
-
-        catalogFilename := fmt.Sprintf("%x", h.Sum(nil))
-        return &catalogFilename, nil
-    }
 }
