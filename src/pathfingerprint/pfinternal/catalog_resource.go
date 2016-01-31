@@ -3,9 +3,9 @@ package pfinternal
 import (
     "fmt"
     "strings"
+    "errors"
     "strconv"
     "path"
-    "errors"
 
     "database/sql"
 
@@ -276,66 +276,6 @@ func (self *catalogResource) Close() (err error) {
     return nil
 }
 
-/*
-
-// Update the catalog with the info for the path that the catalog represents. 
-// This action allows us to determine when the directory is new or when the 
-// contents have changed. 
-func (self *catalogResource) setPathHash(relPath *string, hash *string) (ps int, err error) {
-    l := NewLogger("catalog-resource")
-
-// TODO(dustin): !! Refactor to just update.
-
-    defer func() {
-        if r := recover(); r != nil {
-            ps = 0
-            originalErr := r.(error)
-
-            err = l.MergeAndLogError(originalErr, "Could not set path hash", "relPath", *relPath, "hash", *hash)
-        }
-    }()
-
-    l.Debug("Updating path hash.", "relPath", *relPath, "hash", *hash)
-
-    var currentHash string
-
-    l.Debug("Updating existing path-info record.", "relPath", *relPath)
-
-    err = rows.Scan(&currentHash)
-    if err != nil {
-        panic(err)
-    }
-
-    rows.Close()
-
-    if currentHash == *hash {
-        return PathStateUnaffected, nil
-    }
-
-    // The hash has changed.
-
-// TODO(dustin): Can we use an alias on the table here?
-    query := 
-        "UPDATE " +
-            "`paths` " +
-        "SET " +
-            "`hash` = ? " +
-        "WHERE " +
-            "`rel_path` = ?"
-
-    stmt, err := self.db.Prepare(query)
-    if err != nil {
-        panic(err)
-    }
-
-    _, err = stmt.Exec(*hash, *relPath)
-    if err != nil {
-        panic(err)
-    }
-
-    l.Debug("Path-info has been updated.")
-}
-*/
 func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (flr *fileLookupResult, err error) {
     l := NewLogger("catalog-resource")
 
@@ -976,4 +916,73 @@ func (self *catalogResource) getLastPathHash(relPath *string) (hp *string, err e
     }
 
     return &hash, nil
+}
+
+type resolveResult struct {
+    RelPath string
+    PathId int
+    Filename string
+    FileId int
+    Hash string
+}
+
+func (self *catalogResource) ResolvePath(relPath *string) (rr *resolveResult, err error) {
+    l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            rr = nil
+            err = r.(error)
+
+            l.Error("Could not resolve the path", "err", err)
+        }
+    }()
+
+    plr, err := self.lookupPath(relPath)
+    if err != nil {
+        panic(err)
+    }
+
+    if plr.wasFound == false {
+        // We weren't given a [valid] path. Try it as a file.
+
+        if *relPath == "" {
+            panic(errors.New("We're looking for the root hash but it isn't recorded."))
+        }
+
+        parentPath := path.Dir(*relPath)
+        filename := path.Base(*relPath)
+
+        plr, err := self.lookupPath(&parentPath)
+        if err != nil {
+            panic(err)
+        } else if plr.wasFound == false {
+            panic(errors.New("Argument not found as path or file."))
+        }
+
+        pd := newRecordedPathDescriptor(&parentPath, plr.entry.id)
+
+        flr, err := self.lookupFile(pd, &filename)
+        if err != nil {
+            panic(err)
+        } else if plr.wasFound == false {
+            panic(errors.New("Parent directory found but the argument wasn't found as a file within it."))
+        }
+
+        rr = &resolveResult {
+                RelPath: parentPath,
+                PathId: plr.entry.id,
+                Filename: filename,
+                FileId: flr.entry.id,
+                Hash: flr.entry.hash,
+        }
+    } else {
+        rr = &resolveResult {
+                RelPath: *relPath,
+                PathId: plr.entry.id,
+                Hash: plr.entry.hash,
+        }
+    }
+
+    return rr, nil
 }

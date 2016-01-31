@@ -41,7 +41,7 @@ func main() {
         if r := recover(); r != nil {
             err := r.(error)
 
-            fmt.Printf("Critical: %s\n", err.Error())
+            fmt.Printf("ERROR: %s\n", err.Error())
             os.Exit(1)
         }
     }()

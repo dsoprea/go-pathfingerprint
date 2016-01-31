@@ -236,9 +236,10 @@ Usage:
   pflookup [OPTIONS]
 
 Application Options:
-  -c, --catalog-filepath= Catalog path
+  -c, --catalog-filepath= Catalog file-path
   -h, --algorithm=        Hashing algorithm (sha1, sha256) (default: sha1)
   -d, --debug-log         Show debug logging (default: false)
+  -e, --show-extended     Show extended info (default: false)
   -r, --rel-path=         Specific subdirectory
 
 Help Options:
