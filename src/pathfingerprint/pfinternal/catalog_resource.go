@@ -12,6 +12,10 @@ import (
     _ "github.com/mattn/go-sqlite3"
 )
 
+const (
+    CurrentSchemaVersion = 2
+)
+
 type catalogResource struct {
     catalogFilepath *string
     db *sql.DB
@@ -71,6 +75,31 @@ func (self *catalogResource) Open() (err error) {
         panic(err)
     }
 
+    query := 
+        "CREATE TABLE `catalog_info` (\n" +
+            "`catalog_info_id` INTEGER NOT NULL PRIMARY KEY, \n" +
+            "`key` VARCHAR(50) NOT NULL UNIQUE, \n" +
+            "`value` VARCHAR(200) NULL \n" +
+        ")\n"
+
+    wasCreated, err := self.createTable(db, "catalog_info", &query)
+    if err != nil {
+        panic(err)
+    }
+
+    if wasCreated == true {
+        query := 
+            "INSERT INTO `catalog_info` " +
+                "(`key`, `value`) " +
+            "VALUES " +
+                "('schema_version', ?)"
+
+        _, err = self.executeInsert(db, &query, CurrentSchemaVersion)
+        if err != nil {
+            panic(err)
+        }
+    }
+
     // Make sure the table exists.
 
     h, err := self.cc.getHashObject()
@@ -78,46 +107,49 @@ func (self *catalogResource) Open() (err error) {
         panic(err)
     }
 
-    query := 
-        "CREATE TABLE `paths` (" +
-            "`path_id` INTEGER NOT NULL PRIMARY KEY, " +
-            "`rel_path` VARCHAR(1000) NOT NULL, " +
-            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NULL, " +
-            "`schema_version` INTEGER NOT NULL DEFAULT 1, " +
-            "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, " +
-            "CONSTRAINT `paths_rel_path_idx` UNIQUE (`rel_path`)" +
-        ")"
+    query = 
+        "CREATE TABLE `paths` (\n" +
+            "`path_id` INTEGER NOT NULL PRIMARY KEY, \n" +
+            "`rel_path` VARCHAR(1000) NOT NULL, \n" +
+            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NULL, \n" +
+            "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, \n" +
+            "CONSTRAINT `paths_rel_path_idx` UNIQUE (`rel_path`)\n" +
+        ")\n"
 
-    err = self.createTable(db, "paths", &query)
+    wasCreated, err = self.createTable(db, "paths", &query)
     if err != nil {
         panic(err)
     }
 
-    err = self.createIndex(db, "paths_last_check_epoch_idx", "paths", "last_check_epoch", true)
-    if err != nil {
-        panic(err)
+    if wasCreated == true {
+        err = self.createIndex(db, "paths_last_check_epoch_idx", "paths", "last_check_epoch", true)
+        if err != nil {
+            panic(err)
+        }
     }
 
     query = 
-        "CREATE TABLE `files` (" +
-            "`file_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
-            "`path_id` INTEGER NOT NULL, " +
-            "`filename` VARCHAR(255) NOT NULL, " +
-            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NOT NULL, " +
-            "`mtime_epoch` INTEGER UNSIGNED NOT NULL, " +
-            "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, " +
-            "CONSTRAINT `files_filename_idx` UNIQUE (`filename`, `path_id`), " +
-            "CONSTRAINT `files_path_id_fk` FOREIGN KEY (`path_id`) REFERENCES `paths` (`path_id`)" +
-        ")"
+        "CREATE TABLE `files` (\n" +
+            "`file_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, \n" +
+            "`path_id` INTEGER NOT NULL, \n" +
+            "`filename` VARCHAR(255) NOT NULL, \n" +
+            "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NOT NULL, \n" +
+            "`mtime_epoch` INTEGER UNSIGNED NOT NULL, \n" +
+            "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, \n" +
+            "CONSTRAINT `files_filename_idx` UNIQUE (`filename`, `path_id`), \n" +
+            "CONSTRAINT `files_path_id_fk` FOREIGN KEY (`path_id`) REFERENCES `paths` (`path_id`)\n" +
+        ")\n"
 
-    err = self.createTable(db, "files", &query)
+    wasCreated, err = self.createTable(db, "files", &query)
     if err != nil {
         panic(err)
     }
 
-    err = self.createIndex(db, "files_last_check_epoch_idx", "files", "last_check_epoch", true)
-    if err != nil {
-        panic(err)
+    if wasCreated == true {
+        err = self.createIndex(db, "files_last_check_epoch_idx", "files", "last_check_epoch", true)
+        if err != nil {
+            panic(err)
+        }
     }
 
     self.db = db
@@ -125,8 +157,12 @@ func (self *catalogResource) Open() (err error) {
     return nil
 }
 
-func (self *catalogResource) createTable(db *sql.DB, tableName string, tableQuery *string) (err error) {
+func (self *catalogResource) createTable(db *sql.DB, tableName string, tableQuery *string) (wasCreated bool, err error) {
     l := NewLogger("catalog-resource")
+
+    l.Debug("Attempting to create table.", "name", tableName)
+
+    wasCreated = false
 
     defer func() {
         if r := recover(); r != nil {
@@ -143,13 +179,17 @@ func (self *catalogResource) createTable(db *sql.DB, tableName string, tableQuer
         } else {
             panic(err)
         }
+    } else {
+        wasCreated = true
     }
 
-    return nil
+    return wasCreated, nil
 }
 
 func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName string, columnName string, isAscending bool) (err error) {
     l := NewLogger("catalog-resource")
+
+    l.Debug("Attempting to create index.", "name", indexName, "tableName", tableName)
 
     defer func() {
         if r := recover(); r != nil {
@@ -180,6 +220,36 @@ func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName
     }
 
     return nil
+}
+
+func (self *catalogResource) executeInsert(db *sql.DB, query *string, args ...interface{}) (id int64, err error) {
+    l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            id = 0
+            err = r.(error)
+
+            l.Error("Could not insert record", "err", err)
+        }
+    }()
+
+    stmt, err := db.Prepare(*query)
+    if err != nil {
+        panic(err)
+    }
+
+    res, err := stmt.Exec(args...)
+    if err != nil {
+        panic(err)
+    }
+
+    id, err = res.LastInsertId()
+    if err != nil {
+        panic(err)
+    }
+
+    return id, nil
 }
 
 func (self *catalogResource) Close() (err error) {
@@ -558,12 +628,7 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
             "VALUES " +
                 "(?, ?, ?, ?, ?)"
 
-        stmt, err := self.db.Prepare(query)
-        if err != nil {
-            panic(err)
-        }
-
-        _, err = stmt.Exec(flr.pd.GetPathInfoId(), flr.filename, *hash, mtime, nowEpoch)
+        _, err := self.executeInsert(self.db, &query, flr.pd.GetPathInfoId(), flr.filename, *hash, mtime, nowEpoch)
         if err != nil {
             panic(err)
         }
@@ -594,17 +659,7 @@ func (self *catalogResource) createPath(relPath *string, nowEpoch int64) (id int
         "VALUES " +
             "(?, ?)"
 
-    stmt, err := self.db.Prepare(query)
-    if err != nil {
-        panic(err)
-    }
-
-    res, err := stmt.Exec(*relPath, nowEpoch)
-    if err != nil {
-        panic(err)
-    }
-
-    idInt64, err := res.LastInsertId()
+    idInt64, err := self.executeInsert(self.db, &query, *relPath, nowEpoch)
     if err != nil {
         panic(err)
     }

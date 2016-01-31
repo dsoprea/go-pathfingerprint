@@ -151,11 +151,32 @@ There are two tables: One that tracks the information for the paths (`paths`) an
 
 ```
 sqlite> .schema
-CREATE TABLE `paths` (`path_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NULL, `schema_version` INTEGER NOT NULL DEFAULT 1, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `paths_rel_path_idx` UNIQUE (`rel_path`));
+CREATE TABLE `catalog_info` (
+`catalog_info_id` INTEGER NOT NULL PRIMARY KEY, 
+`key` VARCHAR(50) NOT NULL UNIQUE, 
+`value` VARCHAR(200) NULL 
+);
+
+CREATE TABLE `paths` (
+`path_id` INTEGER NOT NULL PRIMARY KEY, 
+`rel_path` VARCHAR(1000) NOT NULL, 
+`hash` VARCHAR(40) NULL, 
+`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, 
+CONSTRAINT `paths_rel_path_idx` UNIQUE (`rel_path`)
+);
 
 CREATE INDEX paths_last_check_epoch_idx ON `paths`(`last_check_epoch` ASC);
 
-CREATE TABLE `files` (`file_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, `path_id` INTEGER NOT NULL, `filename` VARCHAR(255) NOT NULL, `hash` VARCHAR(40) NOT NULL, `mtime_epoch` INTEGER UNSIGNED NOT NULL, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `files_filename_idx` UNIQUE (`filename`, `path_id`), CONSTRAINT `files_path_id_fk` FOREIGN KEY (`path_id`) REFERENCES `paths` (`path_id`));
+CREATE TABLE `files` (
+`file_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, 
+`path_id` INTEGER NOT NULL, 
+`filename` VARCHAR(255) NOT NULL, 
+`hash` VARCHAR(40) NOT NULL, 
+`mtime_epoch` INTEGER UNSIGNED NOT NULL, 
+`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, 
+CONSTRAINT `files_filename_idx` UNIQUE (`filename`, `path_id`), 
+CONSTRAINT `files_path_id_fk` FOREIGN KEY (`path_id`) REFERENCES `paths` (`path_id`)
+);
 
 CREATE INDEX files_last_check_epoch_idx ON `files`(`last_check_epoch` ASC);
 
