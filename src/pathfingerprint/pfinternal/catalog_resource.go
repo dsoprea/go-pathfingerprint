@@ -24,7 +24,9 @@ func NewCatalogResource(catalogFilepath *string, hashAlgorithm *string) (cr *cat
     defer func() {
         if r := recover(); r != nil {
             err = r.(error)
-            l.Error("Could not create catalog resource", "catalogFilepath", *catalogFilepath, "err", err)
+            l.Error("Could not create catalog resource", 
+                "catalogFilepath", *catalogFilepath, 
+                "err", err)
         }
     }()
 
@@ -169,7 +171,9 @@ func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName
     if err != nil {
         // Check for something like this: table `catalog` already exists
         if strings.HasSuffix(err.Error(), "already exists") {
-            l.Debug("Index already exists.", "TableName", tableName, "IndexName", indexName)
+            l.Debug("Index already exists.", 
+                "TableName", tableName, 
+                "IndexName", indexName)
         } else {
             panic(err)
         }
@@ -305,13 +309,17 @@ func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (f
         if rows.Next() == false {
             // We don't yet know about this file.
 
-            l.Debug("Filename not yet in catalog", "relPath", pd.GetRelPath(), "filename", *filename)
+            l.Debug("Filename not yet in catalog", 
+                "relPath", pd.GetRelPath(), 
+                "filename", *filename)
 
             flr = newNotFoundFileLookupResult(pd, filename)
         } else {
             // We already know about this file.
 
-            l.Debug("Filename IS ALREADY in catalog", "relPath", pd.GetRelPath(), "filename", *filename)
+            l.Debug("Filename IS ALREADY in catalog", 
+                "relPath", pd.GetRelPath(), 
+                "filename", *filename)
 
             var catalogEntryId int
             var hash string
@@ -425,7 +433,9 @@ func (self *catalogResource) updateLastFileCheck(flr *fileLookupResult, nowEpoch
         panic(err)
     }
 
-    l.Debug("Epoch updated.", "id", flr.entry.id, "affected", affected)
+    l.Debug("Epoch updated.", 
+        "id", flr.entry.id, 
+        "affected", affected)
 
     if affected < 1 {
         panic(err)
@@ -468,7 +478,9 @@ func (self *catalogResource) updateLastPathCheck(plr *pathLookupResult, nowEpoch
         panic(err)
     }
 
-    l.Debug("Epoch updated for path.", "id", plr.entry.id, "affected", affected)
+    l.Debug("Epoch updated for path.", 
+        "id", plr.entry.id, 
+        "affected", affected)
 
     if affected < 1 {
         panic(errors.New("No rows were affected by the path found-update query"))
@@ -490,7 +502,11 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
     }()
 
     if flr.wasFound == true {
-        l.Debug("Updating entry", "filename", flr.filename, "id", flr.entry.id, "mtime", mtime, "hash", *hash)
+        l.Debug("Updating entry", 
+            "filename", flr.filename, 
+            "id", flr.entry.id, 
+            "mtime", mtime, 
+            "hash", *hash)
 
 // TODO(dustin): Can we use an alias on the table here?
         query := 
@@ -530,7 +546,11 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
             panic(errors.New("Can't insert a file without a valid path ID."))
         }
 
-        l.Debug("Inserting entry", "filename", flr.filename, "mtime", mtime, "hash", *hash, "last_check_epoch", nowEpoch)
+        l.Debug("Inserting entry", 
+            "filename", flr.filename, 
+            "mtime", mtime, 
+            "hash", *hash, 
+            "last_check_epoch", nowEpoch)
 
         query := 
             "INSERT INTO `catalog_entries` " +
@@ -564,7 +584,9 @@ func (self *catalogResource) createPath(relPath *string, nowEpoch int64) (id int
         }
     }()
 
-    l.Debug("Inserting path-info record.", "relPath", *relPath, "nowEpoch", nowEpoch)
+    l.Debug("Inserting path-info record.", 
+        "relPath", *relPath, 
+        "nowEpoch", nowEpoch)
 
     query := 
         "INSERT INTO `path_info` " +
@@ -602,7 +624,10 @@ func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) (err e
         }
     }()
 
-    l.Debug("Updating path", "relPath", pd.GetRelPath(), "id", pd.GetPathInfoId(), "hash", *hash)
+    l.Debug("Updating path", 
+        "relPath", pd.GetRelPath(), 
+        "id", pd.GetPathInfoId(), 
+        "hash", *hash)
 
 // TODO(dustin): Can we use an alias on the table here?
     query := 

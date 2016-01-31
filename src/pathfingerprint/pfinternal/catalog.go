@@ -156,22 +156,6 @@ func (self *Catalog) Close() error {
 
     return nil
 }
-/*
-// Update the catalog with the info for the path that the catalog represents. 
-// This action allows us to determine when the directory is new or when the 
-// contents have changed. 
-func (self *Catalog) setPathHash(hash *string) (int, error) {
-    l := NewLogger("catalog")
-
-    ps, err := self.cr.setPathHash(self.pd.GetRelPath(), hash)
-    if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not set path hash")
-        return 0, errorNew
-    }
-
-    return ps, nil
-}
-*/
 
 func (self *Catalog) lookupFile(filename *string) (flrp *fileLookupResult, err error) {
     l := NewLogger("catalog")
@@ -184,7 +168,9 @@ func (self *Catalog) lookupFile(filename *string) (flrp *fileLookupResult, err e
         }
     }()
 
-    l.Debug("Looking up file.", "relPath", self.pd.GetRelPath(), "filename", *filename)
+    l.Debug("Looking up file.", 
+        "relPath", self.pd.GetRelPath(), 
+        "filename", *filename)
 
     if self.pd.GetPathInfoId() == 0 {
         // The path record wasn't even found and we weren't allowed to create 
@@ -201,7 +187,10 @@ func (self *Catalog) lookupFile(filename *string) (flrp *fileLookupResult, err e
             // Update the timestamp of the record so that we can determine 
             // which records no longer represent valid files.
 
-            l.Debug("Setting last_check_epoch for entry", "relPath", self.pd.GetRelPath(), "filename", *filename, "last_check_epoch", self.nowEpoch)
+            l.Debug("Setting last_check_epoch for entry", 
+                "relPath", self.pd.GetRelPath(), 
+                "filename", *filename, 
+                "last_check_epoch", self.nowEpoch)
 
             err = self.cr.updateLastFileCheck(flrp, self.nowEpoch)
             if err != nil {
@@ -210,7 +199,9 @@ func (self *Catalog) lookupFile(filename *string) (flrp *fileLookupResult, err e
         }
     }
 
-    l.Debug("File lookup result.", "found", flrp.wasFound, "entry", flrp.entry)
+    l.Debug("File lookup result.", 
+        "found", flrp.wasFound, 
+        "entry", flrp.entry)
 
     return flrp, nil
 }
@@ -237,7 +228,9 @@ func (self *Catalog) lookupPath(relPath *string) (plrp *pathLookupResult, err er
         // Update the timestamp of the record so that we can determine 
         // which records no longer represent valid files.
 
-        l.Debug("Setting last_check_epoch for path", "relPath", *relPath, "last_check_epoch", self.nowEpoch)
+        l.Debug("Setting last_check_epoch for path", 
+            "relPath", *relPath, 
+            "last_check_epoch", self.nowEpoch)
 
         err = self.cr.updateLastPathCheck(plrp, self.nowEpoch)
         if err != nil {

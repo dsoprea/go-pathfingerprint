@@ -61,7 +61,7 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
         }
     }()
 
-    l.Debug("Generating hash for PATH.", "scanPath", *relPath)
+    l.Debug("Generating hash for PATH.", "relPath", *relPath)
 
     h, err := self.getHashObject()
     if err != nil {
@@ -130,7 +130,9 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
     }
 
     hash = fmt.Sprintf("%x", h.Sum(nil))
-    l.Debug("Calculated PATH hash.", "relPath", *relPath, "hash", hash)
+    l.Debug("Calculated PATH hash.", 
+        "relPath", *relPath, 
+        "hash", hash)
 
 // TODO(dustin): !! How do we or should we emit update events for paths?
     lastHash := existingCatalog.getLastHash()
@@ -195,7 +197,9 @@ func (self *Path) GenerateFileHash(filepath *string) (hash string, err error) {
     }
 
     hash = fmt.Sprintf("%x", h.Sum(nil))
-    l.Debug("Calculated FILE hash.", "hash", hash, "filepath", *filepath)
+    l.Debug("Calculated FILE hash.", 
+        "hash", hash, 
+        "filepath", *filepath)
 
     return hash, nil
 }
