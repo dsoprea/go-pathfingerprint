@@ -1,2 +1,3 @@
 - Be able to print hashes for children at a specific level (can be provided multiple times for multiple levels).
-
+- Add tests for catalog
+- Is no-updates feature-complete?
