@@ -147,32 +147,32 @@ Enter ".help" for instructions
 Enter SQL statements terminated with a ";"
 ```
 
-There are two tables: One that tracks the information for the paths (`path_info`) and a table that tracks file (`catalog_entries`):
+There are two tables: One that tracks the information for the paths (`paths`) and a table that tracks files (`files`):
 
 ```
 sqlite> .schema
-CREATE TABLE `path_info` (`path_info_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NULL, `schema_version` INTEGER NOT NULL DEFAULT 1, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `path_info_rel_path_idx` UNIQUE (`rel_path`));
+CREATE TABLE `paths` (`path_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NULL, `schema_version` INTEGER NOT NULL DEFAULT 1, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `paths_rel_path_idx` UNIQUE (`rel_path`));
 
-CREATE INDEX path_info_last_check_epoch_idx ON `path_info`(`last_check_epoch` ASC);
+CREATE INDEX paths_last_check_epoch_idx ON `paths`(`last_check_epoch` ASC);
 
-CREATE TABLE `catalog_entries` (`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, `path_info_id` INTEGER NOT NULL, `filename` VARCHAR(255) NOT NULL, `hash` VARCHAR(40) NOT NULL, `mtime_epoch` INTEGER UNSIGNED NOT NULL, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `catalog_entries_filename_idx` UNIQUE (`filename`, `path_info_id`), CONSTRAINT `catalog_entries_path_info_id_fk` FOREIGN KEY (`path_info_id`) REFERENCES `path_info` (`path_info_id`));
+CREATE TABLE `files` (`file_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, `path_id` INTEGER NOT NULL, `filename` VARCHAR(255) NOT NULL, `hash` VARCHAR(40) NOT NULL, `mtime_epoch` INTEGER UNSIGNED NOT NULL, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `files_filename_idx` UNIQUE (`filename`, `path_id`), CONSTRAINT `files_path_id_fk` FOREIGN KEY (`path_id`) REFERENCES `paths` (`path_id`));
 
-CREATE INDEX catalog_entries_last_check_epoch_idx ON `catalog_entries`(`last_check_epoch` ASC);
+CREATE INDEX files_last_check_epoch_idx ON `files`(`last_check_epoch` ASC);
 
-sqlite> select * from path_info;
+sqlite> select * from paths;
 1||6aa8497382567423b54cf5df5219b7a919bcd852|1|1454263914
 2|dir1|cf2474d380f31b1000bbfa2c3ba8f4d5dfa3f911|1|1454263914
 3|dir1/dir1dir1|013717fdca5c76331fbcb02e166d775dd6c5e34f|1|1454263914
 4|dir2|18b040d8a968fa875002cd573c476ab9738501ba|1|1454263914
 
-sqlite> select * from catalog_entries;
+sqlite> select * from files;
 1|1|aa|da39a3ee5e6b4b0d3255bfef95601890afd80709|1454205021|1454263914
 2|1|bb|da39a3ee5e6b4b0d3255bfef95601890afd80709|1454205022|1454263914
 3|2|cc|90cda474cb6daddeb084c0f58abe41b26f418e8f|1454262735|1454263914
 ...
 ```
 
-To see the last hash that was generated for the root directory, look at the hash for the corresponding record in the `path_info` table:
+To see the last hash that was generated for the root directory, look at the hash for the corresponding record in the `paths` table:
 
 ```
 $ sqlite3 catalog_file
@@ -180,7 +180,7 @@ SQLite version 3.8.2 2013-12-06 14:53:30
 Enter ".help" for instructions
 Enter SQL statements terminated with a ";"
 
-sqlite> select hash from path_info where rel_path = "";
+sqlite> select hash from paths where rel_path = "";
 6aa8497382567423b54cf5df5219b7a919bcd852
 ```
 

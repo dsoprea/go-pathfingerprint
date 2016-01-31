@@ -79,43 +79,43 @@ func (self *catalogResource) Open() (err error) {
     }
 
     query := 
-        "CREATE TABLE `path_info` (" +
-            "`path_info_id` INTEGER NOT NULL PRIMARY KEY, " +
+        "CREATE TABLE `paths` (" +
+            "`path_id` INTEGER NOT NULL PRIMARY KEY, " +
             "`rel_path` VARCHAR(1000) NOT NULL, " +
             "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NULL, " +
             "`schema_version` INTEGER NOT NULL DEFAULT 1, " +
             "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, " +
-            "CONSTRAINT `path_info_rel_path_idx` UNIQUE (`rel_path`)" +
+            "CONSTRAINT `paths_rel_path_idx` UNIQUE (`rel_path`)" +
         ")"
 
-    err = self.createTable(db, "path_info", &query)
+    err = self.createTable(db, "paths", &query)
     if err != nil {
         panic(err)
     }
 
-    err = self.createIndex(db, "path_info_last_check_epoch_idx", "path_info", "last_check_epoch", true)
+    err = self.createIndex(db, "paths_last_check_epoch_idx", "paths", "last_check_epoch", true)
     if err != nil {
         panic(err)
     }
 
     query = 
-        "CREATE TABLE `catalog_entries` (" +
-            "`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
-            "`path_info_id` INTEGER NOT NULL, " +
+        "CREATE TABLE `files` (" +
+            "`file_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, " +
+            "`path_id` INTEGER NOT NULL, " +
             "`filename` VARCHAR(255) NOT NULL, " +
             "`hash` VARCHAR(" + strconv.Itoa(h.Size() * 2) + ") NOT NULL, " +
             "`mtime_epoch` INTEGER UNSIGNED NOT NULL, " +
             "`last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, " +
-            "CONSTRAINT `catalog_entries_filename_idx` UNIQUE (`filename`, `path_info_id`), " +
-            "CONSTRAINT `catalog_entries_path_info_id_fk` FOREIGN KEY (`path_info_id`) REFERENCES `path_info` (`path_info_id`)" +
+            "CONSTRAINT `files_filename_idx` UNIQUE (`filename`, `path_id`), " +
+            "CONSTRAINT `files_path_id_fk` FOREIGN KEY (`path_id`) REFERENCES `paths` (`path_id`)" +
         ")"
 
-    err = self.createTable(db, "catalog_entries", &query)
+    err = self.createTable(db, "files", &query)
     if err != nil {
         panic(err)
     }
 
-    err = self.createIndex(db, "catalog_entries_last_check_epoch_idx", "catalog_entries", "last_check_epoch", true)
+    err = self.createIndex(db, "files_last_check_epoch_idx", "files", "last_check_epoch", true)
     if err != nil {
         panic(err)
     }
@@ -247,7 +247,7 @@ func (self *catalogResource) setPathHash(relPath *string, hash *string) (ps int,
 // TODO(dustin): Can we use an alias on the table here?
     query := 
         "UPDATE " +
-            "`path_info` " +
+            "`paths` " +
         "SET " +
             "`hash` = ? " +
         "WHERE " +
@@ -283,14 +283,14 @@ func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (f
     } else {
         query := 
             "SELECT " +
-                "`ce`.`catalog_entry_id`, " +
-                "`ce`.`hash`, " +
-                "`ce`.`mtime_epoch` " +
+                "`f`.`file_id`, " +
+                "`f`.`hash`, " +
+                "`f`.`mtime_epoch` " +
             "FROM " +
-                "`catalog_entries` `ce` " +
+                "`files` `f` " +
             "WHERE " +
-                "`ce`.`filename` = ? AND " +
-                "`ce`.`path_info_id` = ?"
+                "`f`.`filename` = ? AND " +
+                "`f`.`path_id` = ?"
 
         stmt, err := self.db.Prepare(query)
         if err != nil {
@@ -352,12 +352,12 @@ func (self *catalogResource) lookupPath(relPath *string) (flr *pathLookupResult,
 
     query := 
         "SELECT " +
-            "`pi`.`path_info_id`, " +
-            "`pi`.`hash` " +
+            "`p`.`path_id`, " +
+            "`p`.`hash` " +
         "FROM " +
-            "`path_info` `pi` " +
+            "`paths` `p` " +
         "WHERE " +
-            "`pi`.`rel_path` = ?"
+            "`p`.`rel_path` = ?"
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
@@ -412,11 +412,11 @@ func (self *catalogResource) updateLastFileCheck(flr *fileLookupResult, nowEpoch
 // TODO(dustin): Can we use an alias on the table here?
     query := 
         "UPDATE " +
-            "`catalog_entries` " +
+            "`files` " +
         "SET " +
             "`last_check_epoch` = ? " +
         "WHERE " +
-            "`catalog_entry_id` = ?"
+            "`file_id` = ?"
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
@@ -457,11 +457,11 @@ func (self *catalogResource) updateLastPathCheck(plr *pathLookupResult, nowEpoch
 // TODO(dustin): Can we use an alias on the table here?
     query := 
         "UPDATE " +
-            "`path_info` " +
+            "`paths` " +
         "SET " +
             "`last_check_epoch` = ? " +
         "WHERE " +
-            "`path_info_id` = ?"
+            "`path_id` = ?"
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
@@ -511,12 +511,12 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
 // TODO(dustin): Can we use an alias on the table here?
         query := 
             "UPDATE " +
-                "`catalog_entries` " +
+                "`files` " +
             "SET " +
                 "`hash` = ?, " +
                 "`mtime_epoch` = ? " +
             "WHERE " +
-                "`catalog_entry_id` = ?"
+                "`file_id` = ?"
 
         stmt, err := self.db.Prepare(query)
         if err != nil {
@@ -553,8 +553,8 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
             "last_check_epoch", nowEpoch)
 
         query := 
-            "INSERT INTO `catalog_entries` " +
-                "(`path_info_id`, `filename`, `hash`, `mtime_epoch`, `last_check_epoch`) " +
+            "INSERT INTO `files` " +
+                "(`path_id`, `filename`, `hash`, `mtime_epoch`, `last_check_epoch`) " +
             "VALUES " +
                 "(?, ?, ?, ?, ?)"
 
@@ -589,7 +589,7 @@ func (self *catalogResource) createPath(relPath *string, nowEpoch int64) (id int
         "nowEpoch", nowEpoch)
 
     query := 
-        "INSERT INTO `path_info` " +
+        "INSERT INTO `paths` " +
             "(`rel_path`, `last_check_epoch`) " +
         "VALUES " +
             "(?, ?)"
@@ -632,11 +632,11 @@ func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) (err e
 // TODO(dustin): Can we use an alias on the table here?
     query := 
         "UPDATE " +
-            "`path_info` " +
+            "`paths` " +
         "SET " +
             "`hash` = ? " +
         "WHERE " +
-            "`path_info_id` = ?"
+            "`path_id` = ?"
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
@@ -682,14 +682,14 @@ func (self *catalogResource) pushOldFiles(nowEpoch int64, c chan<- *ChangeEvent)
 
     query := 
         "SELECT " +
-            "`pi`.`rel_path`, " +
-            "`ce`.`filename` " +
+            "`p`.`rel_path`, " +
+            "`f`.`filename` " +
         "FROM " +
-            "`catalog_entries` `ce`, " +
-            "`path_info` `pi` " +
+            "`files` `f`, " +
+            "`paths` `p` " +
         "WHERE " +
-            "`ce`.`last_check_epoch` < ? AND " +
-            "`pi`.`path_info_id` = `ce`.`path_info_id`"
+            "`f`.`last_check_epoch` < ? AND " +
+            "`p`.`path_id` = `f`.`path_id`"
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
@@ -749,11 +749,11 @@ func (self *catalogResource) pushOldPaths(nowEpoch int64, c chan<- *ChangeEvent)
 
     query := 
         "SELECT " +
-            "`pi`.`rel_path` " +
+            "`p`.`rel_path` " +
         "FROM " +
-            "`path_info` `pi` " +
+            "`paths` `p` " +
         "WHERE " +
-            "`pi`.`last_check_epoch` < ?"
+            "`p`.`last_check_epoch` < ?"
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
@@ -811,7 +811,7 @@ func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent
     }
 
     query := 
-        "DELETE FROM `catalog_entries` " +
+        "DELETE FROM `files` " +
         "WHERE " +
             "`last_check_epoch` < ?"
 
@@ -853,7 +853,7 @@ func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent
     }
 
     query := 
-        "DELETE FROM `path_info` " +
+        "DELETE FROM `paths` " +
         "WHERE " +
             "`last_check_epoch` < ?"
 
@@ -891,11 +891,11 @@ func (self *catalogResource) getLastPathHash(relPath *string) (hp *string, err e
 
     query := 
         "SELECT " +
-            "`pi`.`hash` " +
+            "`p`.`hash` " +
         "FROM " +
-            "`path_info` `pi` " +
+            "`paths` `p` " +
         "WHERE " +
-            "`pi`.`rel_path` = ?"
+            "`p`.`rel_path` = ?"
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
