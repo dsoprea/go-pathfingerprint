@@ -8,7 +8,6 @@ import (
     "hash"
 
     "io/ioutil"
-    "runtime/debug"
 )
 
 const (
@@ -29,13 +28,21 @@ func NewPath(hashAlgorithm *string, reportingChannel chan<- *ChangeEvent) *Path 
     return &p
 }
 
-func (self *Path) getHashObject() (hash.Hash, error) {
+func (self *Path) getHashObject() (h hash.Hash, err error) {
     l := NewLogger("path")
 
-    h, err := getHashObject(self.hashAlgorithm)
+    defer func() {
+        if r := recover(); r != nil {
+            h = nil
+            err = r.(error)
+
+            l.Error("Could not get hash object", "err", err)
+        }
+    }()
+
+    h, err = getHashObject(self.hashAlgorithm)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get hash object (path)", "hashAlgorithm", *self.hashAlgorithm)
-        return nil, errorNew
+        panic(err)
     }
 
     return h, nil
@@ -48,11 +55,9 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
     defer func() {
         if r := recover(); r != nil {
             hash = ""
-            originalErr := r.(error)
+            err = r.(error)
 
-            fmt.Printf("Error: %s\n", debug.Stack())
-
-            err = l.MergeAndLogError(originalErr, "Could not generate path hash.", "scanPath", *scanPath, "relPath", *relPath)
+            l.Error("Could not generate path hash", "err", err)
         }
     }()
 
@@ -153,9 +158,9 @@ func (self *Path) GenerateFileHash(filepath *string) (hash string, err error) {
     defer func() {
         if r := recover(); r != nil {
             hash = ""
-            originalErr := r.(error)
+            err = r.(error)
 
-            err = l.MergeAndLogError(originalErr, "Could not generate hash", "filepath", *filepath)
+            l.Error("Could not generate hash", "err", err)
         }
     }()
 

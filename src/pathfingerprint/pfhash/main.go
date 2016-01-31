@@ -72,7 +72,7 @@ func main() {
     }
 
     l := pfinternal.NewLogger("pfhash")
-    l.ConfigureRootLogger()
+    pfinternal.ConfigureRootLogger()
 
     if profileFilename != "" {
         l.Debug("Profiling enabled.")

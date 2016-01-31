@@ -20,13 +20,21 @@ func (self *catalogCommon) HashAlgorithm () *string {
     return self.hashAlgorithm
 }
 
-func (self *catalogCommon) getHashObject () (hash.Hash, error) {
+func (self *catalogCommon) getHashObject () (h hash.Hash, err error) {
     l := NewLogger("catalog_common")
+
+    defer func() {
+        if r := recover(); r != nil {
+            h = nil
+            err = r.(error)
+
+            l.Error("Could not get hash object", "err", err)
+        }
+    }()
     
-    h, err := getHashObject(self.hashAlgorithm)
+    h, err = getHashObject(self.hashAlgorithm)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get hash object (catalog)", "hashAlgorithm", *self.hashAlgorithm)
-        return nil, errorNew
+        panic(err)
     }
 
     return h, nil

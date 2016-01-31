@@ -43,8 +43,7 @@ func createTempPath(parentPath string, prefix string) string {
 }
 
 func TestCalculateSimpleHash(t *testing.T) {
-    l := NewLogger("path_test")
-    l.ConfigureRootLogger()
+    ConfigureRootLogger()
 
     hashAlgorithm := HashAlgorithm
 

@@ -8,7 +8,6 @@ import (
     "errors"
 
     "database/sql"
-    "runtime/debug"
 
     _ "github.com/mattn/go-sqlite3"
 )
@@ -24,10 +23,8 @@ func NewCatalogResource(catalogFilepath *string, hashAlgorithm *string) (cr *cat
 
     defer func() {
         if r := recover(); r != nil {
-            cr = nil
-            originalErr := r.(error)
-
-            err = l.MergeAndLogError(originalErr, "Could not create catalog resource", "catalogFilepath", *catalogFilepath)
+            err = r.(error)
+            l.Error("Could not create catalog resource", "catalogFilepath", *catalogFilepath, "err", err)
         }
     }()
 
@@ -48,19 +45,16 @@ func NewCatalogResource(catalogFilepath *string, hashAlgorithm *string) (cr *cat
 //               no-updates mode).
 
 func (self *catalogResource) Open() (err error) {
-    var db *sql.DB
-
     l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
-            originalErr := r.(error)
-
-            fmt.Printf("%s\n", debug.Stack())
-
-            err = l.MergeAndLogError(originalErr, "Could not open catalog-resource")
+            err = r.(error)
+            l.Error("Could not open catalog resource", "err", err)
         }
     }()
+
+    var db *sql.DB
 
     l.Debug("Opening catalog resource.")
 
@@ -129,25 +123,38 @@ func (self *catalogResource) Open() (err error) {
     return nil
 }
 
-func (self *catalogResource) createTable(db *sql.DB, tableName string, tableQuery *string) error {
+func (self *catalogResource) createTable(db *sql.DB, tableName string, tableQuery *string) (err error) {
     l := NewLogger("catalog-resource")
 
-    _, err := db.Exec(*tableQuery)
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not create table", "err", err)
+        }
+    }()
+
+    _, err = db.Exec(*tableQuery)
     if err != nil {
         // Check for something like this: table `catalog` already exists
         if strings.HasSuffix(err.Error(), "already exists") {
             l.Debug("Table already exists.", "Name", tableName)
         } else {
-            errorNew := l.MergeAndLogError(err, "Could not create table")
-            return errorNew
+            panic(err)
         }
     }
 
     return nil
 }
 
-func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName string, columnName string, isAscending bool) error {
+func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName string, columnName string, isAscending bool) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not create index.", "err", err)
+        }
+    }()
 
     var suffixModifier string;
     if isAscending == true {
@@ -158,28 +165,33 @@ func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName
 
     query := fmt.Sprintf("CREATE INDEX %s ON `%s`(`%s` %s)", indexName, tableName, columnName, suffixModifier)
 
-    _, err := db.Exec(query)
+    _, err = db.Exec(query)
     if err != nil {
         // Check for something like this: table `catalog` already exists
         if strings.HasSuffix(err.Error(), "already exists") {
             l.Debug("Index already exists.", "TableName", tableName, "IndexName", indexName)
         } else {
-            errorNew := l.MergeAndLogError(err, "Could not create index", "index", indexName)
-            return errorNew
+            panic(err)
         }
     }
 
     return nil
 }
 
-func (self *catalogResource) Close() error {
+func (self *catalogResource) Close() (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not close catalog resource", "err", err)
+        }
+    }()
 
     l.Debug("Closing catalog resource.")
 
     if self.db == nil {
-        errorNew := l.LogError("Connection not open and can't be closed.")
-        return errorNew
+        panic(errors.New("Connection not open and can't be closed."))
     }
 
     self.db.Close()
@@ -256,11 +268,9 @@ func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (f
     defer func() {
         if r := recover(); r != nil {
             flr = nil
-            originalErr := r.(error)
+            err = r.(error)
 
-            fmt.Printf("%s\n", debug.Stack())
-
-            err = l.MergeAndLogError(originalErr, "Could not do file entry lookup", "relPath", pd.GetRelPath(), "filename", *filename)
+            l.Error("Could not open catalog resource", "err", err)
         }
     }()
 
@@ -280,16 +290,14 @@ func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (f
 
         stmt, err := self.db.Prepare(query)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not prepare file-lookup query")
-            return nil, errorNew
+            panic(err)
         }
 
         pathInfoId := pd.GetPathInfoId()
 
         rows, err := stmt.Query(*filename, pathInfoId)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not execute file-lookup")
-            return nil, errorNew
+            panic(err)
         }
 
         defer rows.Close()
@@ -311,8 +319,7 @@ func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (f
 
             err = rows.Scan(&catalogEntryId, &hash, &mtimeEpoch)
             if err != nil {
-                errorNew := l.MergeAndLogError(err, "Could not parse file-lookup result record")
-                return nil, errorNew
+                panic(err)
             }
 
             ce := newCatalogEntry(catalogEntryId, &hash, mtimeEpoch)
@@ -329,12 +336,9 @@ func (self *catalogResource) lookupPath(relPath *string) (flr *pathLookupResult,
     defer func() {
         if r := recover(); r != nil {
             flr = nil
-            originalErr := r.(error)
+            err = r.(error)
 
-            fmt.Printf("relPath: [%s]\n", relPath)
-            fmt.Printf("Stacktrace:\n%s\n", debug.Stack())
-
-            err = l.MergeAndLogError(originalErr, "Could not do path-lookup", "relPath", *relPath)
+            l.Error("Could not lookup path", "err", err)
         }
     }()
 
@@ -349,14 +353,12 @@ func (self *catalogResource) lookupPath(relPath *string) (flr *pathLookupResult,
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare path-lookup query")
-        return nil, errorNew
+        panic(err)
     }
 
     rows, err := stmt.Query(relPath)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute path-lookup")
-        return nil, errorNew
+        panic(err)
     }
 
     defer rows.Close()
@@ -379,8 +381,7 @@ func (self *catalogResource) lookupPath(relPath *string) (flr *pathLookupResult,
 
         err = rows.Scan(&pathInfoId, &hash)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not parse path-lookup result record")
-            return nil, errorNew
+            panic(err)
         }
 
         entry := newPathEntry(pathInfoId, &hash)
@@ -390,8 +391,15 @@ func (self *catalogResource) lookupPath(relPath *string) (flr *pathLookupResult,
     return plr, nil
 }
 
-func (self *catalogResource) updateLastFileCheck(flr *fileLookupResult, nowEpoch int64) error {
+func (self *catalogResource) updateLastFileCheck(flr *fileLookupResult, nowEpoch int64) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not update last file-check timestamp", "err", err)
+        }
+    }()
 
 // TODO(dustin): Can we use an alias on the table here?
     query := 
@@ -404,34 +412,37 @@ func (self *catalogResource) updateLastFileCheck(flr *fileLookupResult, nowEpoch
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare found-update query")
-        return errorNew
+        panic(err)
     }
 
     r, err := stmt.Exec(nowEpoch, flr.entry.id)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute found-update query")
-        return errorNew
+        panic(err)
     }
 
     affected, err := r.RowsAffected()
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get the number of affected rows from the found-update query")
-        return errorNew
+        panic(err)
     }
 
     l.Debug("Epoch updated.", "id", flr.entry.id, "affected", affected)
 
     if affected < 1 {
-        errorNew := l.LogError("No rows were affected by the found-update query")
-        return errorNew
+        panic(err)
     }
 
     return nil
 }
 
-func (self *catalogResource) updateLastPathCheck(plr *pathLookupResult, nowEpoch int64) error {
+func (self *catalogResource) updateLastPathCheck(plr *pathLookupResult, nowEpoch int64) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not update last path-check", "err", err)
+        }
+    }()
 
 // TODO(dustin): Can we use an alias on the table here?
     query := 
@@ -444,35 +455,39 @@ func (self *catalogResource) updateLastPathCheck(plr *pathLookupResult, nowEpoch
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare path found-update query")
-        return errorNew
+        panic(err)
     }
 
     r, err := stmt.Exec(nowEpoch, plr.entry.id)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute path found-update query")
-        return errorNew
+        panic(err)
     }
 
     affected, err := r.RowsAffected()
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get the number of affected rows from the path found-update query")
-        return errorNew
+        panic(err)
     }
 
     l.Debug("Epoch updated for path.", "id", plr.entry.id, "affected", affected)
 
     if affected < 1 {
-        return l.LogError("No rows were affected by the path found-update query")
+        panic(errors.New("No rows were affected by the path found-update query"))
     } else if affected > 1 {
-        return l.LogError("Too many rows were affected by the path found-update query")
+        panic(errors.New("Too many rows were affected by the path found-update query"))
     }
 
     return nil
 }
 
-func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *string, nowEpoch int64) error {
+func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *string, nowEpoch int64) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not set file", "err", err)
+        }
+    }()
 
     if flr.wasFound == true {
         l.Debug("Updating entry", "filename", flr.filename, "id", flr.entry.id, "mtime", mtime, "hash", *hash)
@@ -489,26 +504,23 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
 
         stmt, err := self.db.Prepare(query)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not prepare entry-update query")
-            return errorNew
+            panic(err)
         }
 
         r, err := stmt.Exec(*hash, mtime, flr.entry.id)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not execute entry-update query")
-            return errorNew
+            panic(err)
         }
 
         affected, err := r.RowsAffected()
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not get the number of affected rows from the entry-update query")
-            return errorNew
+            panic(err)
         }
 
         if affected < 1 {
-            return l.LogError("No rows were affected by the entry-update query")
+            panic(errors.New("No rows were affected by the entry-update query"))
         } else if affected > 1 {
-            return l.LogError("Too many rows were affected by the entry-update query")
+            panic(errors.New("Too many rows were affected by the entry-update query"))
         }
     } else {
         // The filename wasn't in the catalog. Add it.
@@ -528,14 +540,12 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
 
         stmt, err := self.db.Prepare(query)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not prepare entry-insert query")
-            return errorNew
+            panic(err)
         }
 
         _, err = stmt.Exec(flr.pd.GetPathInfoId(), flr.filename, *hash, mtime, nowEpoch)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not execute entry-insert query")
-            return errorNew
+            panic(err)
         }
     }
 
@@ -548,11 +558,9 @@ func (self *catalogResource) createPath(relPath *string, nowEpoch int64) (id int
     defer func() {
         if r := recover(); r != nil {
             id = 0
-            originalErr := r.(error)
+            err = r.(error)
 
-            fmt.Printf("Stack:\n%s\n", debug.Stack())
-
-            err = l.MergeAndLogError(originalErr, "Could not create path", "relPath", *relPath)
+            l.Error("Could not create path", "err", err)
         }
     }()
 
@@ -584,8 +592,15 @@ func (self *catalogResource) createPath(relPath *string, nowEpoch int64) (id int
     return int(idInt64), nil
 }
 
-func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) error {
+func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not update path", "err", err)
+        }
+    }()
 
     l.Debug("Updating path", "relPath", pd.GetRelPath(), "id", pd.GetPathInfoId(), "hash", *hash)
 
@@ -600,26 +615,23 @@ func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) error 
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare path-update query")
-        return errorNew
+        panic(err)
     }
 
     r, err := stmt.Exec(*hash, pd.GetPathInfoId())
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute path-update query")
-        return errorNew
+        panic(err)
     }
 
     affected, err := r.RowsAffected()
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get the number of affected rows from the path-update query")
-        return errorNew
+        panic(err)
     }
 
     if affected < 1 {
-        return l.LogError("No rows were affected by the path-update query")
+        panic(errors.New("No rows were affected by the path-update query"))
     } else if affected > 1 {
-        return l.LogError("Too many rows were affected by the path-update query")
+        panic(errors.New("Too many rows were affected by the path-update query"))
     }
 
     return nil
@@ -628,8 +640,15 @@ func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) error 
 // Get a list of all file records that haven't been touched in this run 
 // (because all of the ones that match known files have been updated to a later 
 // timestamp than they had).
-func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *ChangeEvent) error {
+func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not push old files", "err", err)
+        }
+    }()
 
     // If we're reporting changes, then enumerate the entries to be delete 
     // and push them up.
@@ -647,14 +666,12 @@ func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *Change
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare old-files query")
-        return errorNew
+        panic(err)
     }
 
     rows, err := stmt.Query(nowEpoch)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute old-files query")
-        return errorNew
+        panic(err)
     }
 
     defer rows.Close()
@@ -665,8 +682,7 @@ func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *Change
 
         err = rows.Scan(&relPath, &filename)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not parse filename from old-files query")
-            return errorNew
+            panic(err)
         }
 
         relFilepath := path.Join(relPath, filename)
@@ -684,8 +700,15 @@ func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *Change
 // Get a list of all path records that haven't been touched in this run 
 // (because all of the ones that match known files have been updated to a later 
 // timestamp than they had).
-func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *ChangeEvent) error {
+func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not push old paths", "err", err)
+        }
+    }()
 
     // If we're reporting changes, then enumerate the entries to be delete 
     // and push them up.
@@ -700,14 +723,12 @@ func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *Change
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare old-paths query")
-        return errorNew
+        panic(err)
     }
 
     rows, err := stmt.Query(nowEpoch)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute old-paths query")
-        return errorNew
+        panic(err)
     }
 
     defer rows.Close()
@@ -717,8 +738,7 @@ func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *Change
 
         err = rows.Scan(&relPath)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not parse rel-path from old-paths query")
-            return errorNew
+            panic(err)
         }
 
         c <- &ChangeEvent { 
@@ -734,14 +754,20 @@ func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *Change
 // Delete all records that haven't been touched in this run (because all of the 
 // ones that match known files have been updated to a later timestamp than they 
 // had).
-func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent) error {
+func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not prune old files", "err", err)
+        }
+    }()
 
     if c != nil {
         err := self.pushOldFileEntries(nowEpoch, c)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not report old FILE entries")
-            return errorNew
+            panic(err)
         }
     }
 
@@ -752,20 +778,17 @@ func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare entries-prune query")
-        return errorNew
+        panic(err)
     }
 
     r, err := stmt.Exec(nowEpoch)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute entries-prune query")
-        return errorNew
+        panic(err)
     }
 
     affected, err := r.RowsAffected()
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get the number of affected rows from the entries-prune query")
-        return errorNew
+        panic(err)
     }
 
     l.Debug("Pruned old FILE entries.", "affected", affected)
@@ -773,14 +796,20 @@ func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent
     return nil
 }
 
-func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent) error {
+func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not prune old paths", "err", err)
+        }
+    }()
 
     if c != nil {
         err := self.pushOldPathEntries(nowEpoch, c)
         if err != nil {
-            errorNew := l.MergeAndLogError(err, "Could not report old PATH entries")
-            return errorNew
+            panic(err)
         }
     }
 
@@ -791,20 +820,17 @@ func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare paths-prune query")
-        return errorNew
+        panic(err)
     }
 
     r, err := stmt.Exec(nowEpoch)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute paths-prune query")
-        return errorNew
+        panic(err)
     }
 
     affected, err := r.RowsAffected()
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not get the number of affected rows from the paths-prune query")
-        return errorNew
+        panic(err)
     }
 
     l.Debug("Pruned old PATH entries.", "affected", affected)
@@ -812,10 +838,17 @@ func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent
     return nil
 }
 
-func (self *catalogResource) getLastPathHash(relPath *string) (*string, error) {
-    var hash string
-
+func (self *catalogResource) getLastPathHash(relPath *string) (hp *string, err error) {
     l := NewLogger("catalog-resource")
+
+    defer func() {
+        if r := recover(); r != nil {
+            hp = nil
+            err = r.(error)
+
+            l.Error("Could not get last path hash", "err", err)
+        }
+    }()
 
     query := 
         "SELECT " +
@@ -827,27 +860,25 @@ func (self *catalogResource) getLastPathHash(relPath *string) (*string, error) {
 
     stmt, err := self.db.Prepare(query)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not prepare path-info identification query (getLastPathHash)")
-        return nil, errorNew
+        panic(err)
     }
 
     rows, err := stmt.Query(*relPath)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not execute path-info identification query (getLastPathHash)")
-        return nil, errorNew
+        panic(err)
     }
 
     defer rows.Close()
 
     if rows.Next() == false {
-        errorNew := l.LogError("Path-info identification result was erroneously empty (getLastPathHash).")
-        return nil, errorNew
+        panic(err)
     }
+
+    var hash string
 
     err = rows.Scan(&hash)
     if err != nil {
-        errorNew := l.MergeAndLogError(err, "Could not parse path-info identification result record (getLastPathHash)")
-        return nil, errorNew
+        panic(err)
     }
 
     return &hash, nil
