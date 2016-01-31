@@ -128,6 +128,8 @@ func main() {
         panic(err)
     }
 
+    c.Cleanup()
+
     if reportFilename != "" {
         reportingQuitChannel <- true
     }

@@ -665,7 +665,7 @@ func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) (err e
 // Get a list of all file records that haven't been touched in this run 
 // (because all of the ones that match known files have been updated to a later 
 // timestamp than they had).
-func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
+func (self *catalogResource) pushOldFiles(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
     l := NewLogger("catalog-resource")
 
     defer func() {
@@ -674,6 +674,8 @@ func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *Change
             l.Error("Could not push old files", "err", err)
         }
     }()
+
+    l.Debug("Pushing old file entries.")
 
     // If we're reporting changes, then enumerate the entries to be delete 
     // and push them up.
@@ -701,7 +703,10 @@ func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *Change
 
     defer rows.Close()
 
+    n := 0
     for rows.Next() {
+        n++
+
         var relPath string
         var filename string
 
@@ -719,13 +724,15 @@ func (self *catalogResource) pushOldFileEntries(nowEpoch int64, c chan<- *Change
         }
     }
 
+    l.Debug("Finished reporting old file entries.", "n", n)
+
     return nil
 }
 
 // Get a list of all path records that haven't been touched in this run 
 // (because all of the ones that match known files have been updated to a later 
 // timestamp than they had).
-func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
+func (self *catalogResource) pushOldPaths(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
     l := NewLogger("catalog-resource")
 
     defer func() {
@@ -734,6 +741,8 @@ func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *Change
             l.Error("Could not push old paths", "err", err)
         }
     }()
+
+    l.Debug("Pushing old path entries.")
 
     // If we're reporting changes, then enumerate the entries to be delete 
     // and push them up.
@@ -758,7 +767,10 @@ func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *Change
 
     defer rows.Close()
 
+    n := 0
     for rows.Next() {
+        n++
+
         var relPath string
 
         err = rows.Scan(&relPath)
@@ -772,6 +784,8 @@ func (self *catalogResource) pushOldPathEntries(nowEpoch int64, c chan<- *Change
                 RelPath: relPath,
         }
     }
+
+    l.Debug("Finished reporting old path entries.", "n", n)
 
     return nil
 }
@@ -790,7 +804,7 @@ func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent
     }()
 
     if c != nil {
-        err := self.pushOldFileEntries(nowEpoch, c)
+        err := self.pushOldFiles(nowEpoch, c)
         if err != nil {
             panic(err)
         }
@@ -832,7 +846,7 @@ func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent
     }()
 
     if c != nil {
-        err := self.pushOldPathEntries(nowEpoch, c)
+        err := self.pushOldPaths(nowEpoch, c)
         if err != nil {
             panic(err)
         }

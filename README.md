@@ -122,6 +122,7 @@ The catalog will usually be updated whether it's the first time you calculate a 
   - etc..
 - As we check a certain path for changes, we update a check-timestamp on each file in that catalog with a new timestamp. We then delete all entries older than that timestamp when we're done processing that directory. This efficiently allows us to both check differences *and* keep the catalog up to date.
 - Because we open and close a database for each path, it's far more efficient to process a directory structure with many files and not as much when there are many empty or under-utilized directories as compared to files.
+- Because we can't determine which directories or files have been removed until the end of the process, deleted directories and files are listed at the bottom of the change report.
 
 
 ## Advanced Usage

@@ -142,6 +142,19 @@ func (self *Catalog) Open() error {
 }
 
 func (self *Catalog) Close() error {
+    return nil
+}
+
+func (self *Catalog) Cleanup() (err error) {
+    l := NewLogger("catalog")
+
+    defer func() {
+        if r := recover(); r != nil {
+            err = r.(error)
+            l.Error("Could not cleaup catalog.", "err", err)
+        }
+    }()
+
     if self.allowUpdates == true {
         err := self.PruneOldFiles()
         if err != nil {
