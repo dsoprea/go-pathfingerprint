@@ -1,13 +1,13 @@
-This tool will recursively and efficiently calculate a SHA1 hash for a given directory. Subsequent checks will not recalculate any file hashes unless any files have changed. You are required to provide a catalog path to store indexing information in. 
+This tool will recursively and efficiently calculate a SHA1 hash for a given directory. Subsequent checks will not recalculate any file hashes unless any files have changed. You are required to provide a file-path to write the file catalog to.
 
 
 ## Usage
 
 ```
-$ pfhash -s <scan path> -c <catalog path>
+$ pfhash -s <scan path> -c <catalog file-path>
 ```
 
-The catalog path does not have to already exist.
+The catalog file-path does not have to already exist.
 
 
 ## Example
@@ -15,7 +15,7 @@ The catalog path does not have to already exist.
 Calculate the hashes on an expensive (hundreds of directories, tens of thousands of files with an average size of ~5M) path:
 
 ```
-$ time pfhash -s photos_path -c catalog_path
+$ time pfhash -s photos_path -c catalog_file
 8250cf94b55e106ce48a83a15569b866aecc1183
 
 real    36m59.201s
@@ -26,7 +26,7 @@ sys     3m24.316s
 Run it again and see the savings:
 
 ```
-$ time pfhash -s photos_path -c catalog_path
+$ time pfhash -s photos_path -c catalog_file
 8250cf94b55e106ce48a83a15569b866aecc1183
 
 real    3m16.700s
@@ -37,13 +37,13 @@ sys     0m8.112s
 If you positively don't want to update the hashes nor do you want a report of changes, use the `pflookup` command:
 
 ```
-$ pflookup -c catalog_path
+$ pflookup -c catalog_filepath
 8250cf94b55e106ce48a83a15569b866aecc1183
 
-$ pflookup -c catalog_path -r subdir1
+$ pflookup -c catalog_filepath -r subdir1
 722ac04c963e16f39655fd4ea0a428ff32ba8399
 
-$ pflookup -c catalog_path -r subdir1/aa
+$ pflookup -c catalog_filepath -r subdir1/aa
 da39a3ee5e6b4b0d3255bfef95601890afd80709
 ```
 
@@ -81,7 +81,7 @@ $ mkdir -p scan_path/subdir2
 $ touch scan_path/subdir1/aa
 $ touch scan_path/subdir1/bb
 
-$ pfhash -s scan_path -c catalog_path -R - 
+$ pfhash -s scan_path -c catalog_file -R - 
 create file subdir1/aa
 create file subdir1/bb
 create path subdir1
@@ -92,7 +92,7 @@ f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
 $ touch scan_path/subdir1/aa
 $ touch scan_path/subdir2/new_file
 
-$ pfhash -s scan_path -c catalog_path -R - 
+$ pfhash -s scan_path -c catalog_file -R - 
 update file subdir1/aa
 create file subdir2/new_file
 update path subdir2
@@ -112,17 +112,16 @@ The catalog will usually be updated whether it's the first time you calculate a 
 
 ## Implementation Notes
 
-- A SQLite database is used to index each directory. These are deposited into the catalog-path.
-- We use the cached file hashes to skip recalculation whenever possible but we recalculate path hashes every time since we still can't avoid checking every file and generating the hash is sufficiently low-cost.
-- We determine if a file hash should be recalculated based on modified-times but the modified-time does not affect the hash: If you accidentally affect a file's mtime without actually changing the file, the hash will stay constant.
+- The catalog is a SQLite database.
+- We use the cached file hashes to skip recalculation whenever possible but we recalculate path hashes every time since we still can't avoid checking every file.
+- We determine if a file hash should be recalculated based on modified-times but the hash does not implemented the modified-time: If you accidentally affect a file's mtime without actually changing the file, the hash will stay constant.
 - The catalog is meant to be portable. You are able to move the contents of the scan-path and the contents of the catalog to a different place without affecting the hashes that are generated. You might use this fact to:
   - archive the catalog and keep it in the root of whatever directory it represents
   - keep a backup of your catalogs on a separate disk
   - ship a copy of your files to offsite backup while keeping a local copy of your catalog for reference
   - etc..
 - As we check a certain path for changes, we update a check-timestamp on each file in that catalog with a new timestamp. We then delete all entries older than that timestamp when we're done processing that directory. This efficiently allows us to both check differences *and* keep the catalog up to date.
-- Because we open and close a database for each path, it's far more efficient to process a directory structure with many files and not as much when there are many empty or under-utilized directories as compared to files.
-- Because we can't determine which directories or files have been removed until the end of the process, deleted directories and files are listed at the bottom of the change report.
+- Because we can't determine which directories or files have been removed until the end of the process, deleted directories and files are listed at the bottom of the change report. Because we write updates as we encounter them, you'll see new directory events appear before the files that appear within them, and then update events for that directory after. 
 
 
 ## Advanced Usage
@@ -130,7 +129,7 @@ The catalog will usually be updated whether it's the first time you calculate a 
 If you feel compelled, you can inspect the catalogs yourself.
 
 ```
-$ pfhash -s scan_path -c catalog_path -R - 
+$ pfhash -s scan_path -c catalog_file -R - 
 create file subdir1/aa
 create file subdir1/bb
 create path subdir1
@@ -139,47 +138,50 @@ create path .
 f52422e037072f73d5d0c3b1ab2d51e3edf67cf3
 ```
 
-To look at the catalog for a particular path, first calculate a SHA1 for the relative path name. For example:
+To look at the catalog, install and use the SQLite 3 command-line tool to open the catalog.
 
 ```
-$ echo -n subdir1 | sha1sum
-84996436541614ee0a22f04a32d22d45407c4a42  -
-```
-
-Then, install and use the SQLite 3 command-line tool to open the file named for that hash in the catalog-path.
-
-```
-$ sqlite3 catalog_path/84996436541614ee0a22f04a32d22d45407c4a42
+$ sqlite3 catalog_file
 SQLite version 3.8.2 2013-12-06 14:53:30
 Enter ".help" for instructions
 Enter SQL statements terminated with a ";"
 ```
 
-There are two tables: One that tracks the information for that path (`path_info`; there will only be one entry) and a table that tracks file entries (`catalog_entries`):
+There are two tables: One that tracks the information for the paths (`path_info`) and a table that tracks file (`catalog_entries`):
 
 ```
 sqlite> .schema
-CREATE TABLE `path_info` (`path_info_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NOT NULL, `schema_version` INTEGER NOT NULL DEFAULT 1);
-CREATE TABLE `catalog_entries` (`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, `filename` VARCHAR(255) NOT NULL, `hash` VARCHAR(40) NOT NULL, `mtime_epoch` INTEGER UNSIGNED NOT NULL, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `filename_idx` UNIQUE (`filename`));
+CREATE TABLE `path_info` (`path_info_id` INTEGER NOT NULL PRIMARY KEY, `rel_path` VARCHAR(1000) NOT NULL, `hash` VARCHAR(40) NULL, `schema_version` INTEGER NOT NULL DEFAULT 1, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `path_info_rel_path_idx` UNIQUE (`rel_path`));
+
+CREATE INDEX path_info_last_check_epoch_idx ON `path_info`(`last_check_epoch` ASC);
+
+CREATE TABLE `catalog_entries` (`catalog_entry_id` INTEGER NOT NULL PRIMARY KEY AUTOINCREMENT, `path_info_id` INTEGER NOT NULL, `filename` VARCHAR(255) NOT NULL, `hash` VARCHAR(40) NOT NULL, `mtime_epoch` INTEGER UNSIGNED NOT NULL, `last_check_epoch` INTEGER UNSIGNED NULL DEFAULT 0, CONSTRAINT `catalog_entries_filename_idx` UNIQUE (`filename`, `path_info_id`), CONSTRAINT `catalog_entries_path_info_id_fk` FOREIGN KEY (`path_info_id`) REFERENCES `path_info` (`path_info_id`));
+
+CREATE INDEX catalog_entries_last_check_epoch_idx ON `catalog_entries`(`last_check_epoch` ASC);
 
 sqlite> select * from path_info;
-1|subdir1|722ac04c963e16f39655fd4ea0a428ff32ba8399|1
+1||6aa8497382567423b54cf5df5219b7a919bcd852|1|1454263914
+2|dir1|cf2474d380f31b1000bbfa2c3ba8f4d5dfa3f911|1|1454263914
+3|dir1/dir1dir1|013717fdca5c76331fbcb02e166d775dd6c5e34f|1|1454263914
+4|dir2|18b040d8a968fa875002cd573c476ab9738501ba|1|1454263914
 
 sqlite> select * from catalog_entries;
-1|aa|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453344685|1453344978
-2|bb|da39a3ee5e6b4b0d3255bfef95601890afd80709|1453344689|1453344978
+1|1|aa|da39a3ee5e6b4b0d3255bfef95601890afd80709|1454205021|1454263914
+2|1|bb|da39a3ee5e6b4b0d3255bfef95601890afd80709|1454205022|1454263914
+3|2|cc|90cda474cb6daddeb084c0f58abe41b26f418e8f|1454262735|1454263914
+...
 ```
 
-The root catalog is simply named "root". To see the last hash that was generated, look at the hash for the single record in the `path_info` table.
+To see the last hash that was generated for the root directory, look at the hash for the corresponding record in the `path_info` table:
 
 ```
-$ sqlite3 catalog_path/root
+$ sqlite3 catalog_file
 SQLite version 3.8.2 2013-12-06 14:53:30
 Enter ".help" for instructions
 Enter SQL statements terminated with a ";"
 
-sqlite> select * from path_info;
-1||8250cf94b55e106ce48a83a15569b866aecc1183|1
+sqlite> select hash from path_info where rel_path = "";
+6aa8497382567423b54cf5df5219b7a919bcd852
 ```
 
 
@@ -193,16 +195,16 @@ Usage:
   pfhash [OPTIONS]
 
 Application Options:
-  -s, --scan-path=    Path to scan
-  -c, --catalog-path= Catalog path (will be created if it doesn't exist)
-  -h, --algorithm=    Hashing algorithm (sha1, sha256) (default: sha1)
-  -n, --no-updates    Don't update the catalog (will also prevent reporting of deletions) (default: false)
-  -R, --report=       Write a report of changed files ('-' for STDERR)
-  -P, --profile=      Write performance profiling information
-  -d, --debug-log     Show debug logging (default: false)
+  -s, --scan-path=        Path to scan
+  -c, --catalog-filepath= Catalog file-path (will be created if it doesn't exist)
+  -h, --algorithm=        Hashing algorithm (sha1, sha256) (default: sha1)
+  -n, --no-updates        Don't update the catalog (will also prevent reporting of deletions) (default: false)
+  -R, --report=           Write a report of changed files ('-' for STDERR)
+  -P, --profile=          Write performance profiling information
+  -d, --debug-log         Show debug logging (default: false)
 
 Help Options:
-  -h, --help          Show this help message
+  -h, --help              Show this help message
 ```
 
 
@@ -214,11 +216,11 @@ Usage:
   pflookup [OPTIONS]
 
 Application Options:
-  -c, --catalog-path= Catalog path
-  -h, --algorithm=    Hashing algorithm (sha1, sha256) (default: sha1)
-  -d, --debug-log     Show debug logging (default: false)
-  -r, --rel-path=     Specific subdirectory
+  -c, --catalog-filepath= Catalog path
+  -h, --algorithm=        Hashing algorithm (sha1, sha256) (default: sha1)
+  -d, --debug-log         Show debug logging (default: false)
+  -r, --rel-path=         Specific subdirectory
 
 Help Options:
-  -h, --help             Show this help message
+  -h, --help              Show this help message
 ```
