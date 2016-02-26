@@ -73,15 +73,14 @@ Hash: [7a5d017ed04f3375a8489624c0c3e83baa1ef70b]
 
 ## Install
 
-$ make
-go get pathfingerprint/pfhash
-go get pathfingerprint/pflookup
-go test pathfingerprint/pfinternal
-ok    pathfingerprint/pfinternal  0.015s
+Make sure your GOPATH is set to a global workspace (directory) that you can install to and run:
 
-$ sudo make install
-install -m 755 bin/pfhash /usr/local/bin/pfhash
-install -m 755 bin/pflookup /usr/local/bin/pflookup
+```
+$ go get github.com/dsoprea/go-pathfingerprint/pfhash
+$ go get github.com/dsoprea/go-pathfingerprint/pflookup
+```
+
+The binaries will obviously be deposited in the bin/ directory, inside your GOPATH.
 
 
 ## Other Features

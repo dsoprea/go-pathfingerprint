@@ -8,7 +8,7 @@ import (
     
     flags "github.com/jessevdk/go-flags"
 
-    "pathfingerprint/pfinternal"
+    "github.com/dsoprea/go-pathfingerprint/pfinternal"
 )
 
 const (
