@@ -6,7 +6,7 @@ import (
     
     flags "github.com/jessevdk/go-flags"
 
-    "github.com/dsoprea/go-pathfingerprint/pfinternal"
+    "github.com/dsoprea/go-pathfingerprint/internal/pfinternal"
 )
 
 type options struct {

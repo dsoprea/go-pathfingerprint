@@ -6,17 +6,14 @@ export DEPOSIT_PATH=$BUILD_PATH/src/$ACCOUNT_PATH
 
 mkdir -p $DEPOSIT_PATH
 
-rm -fr $DEPOSIT_PATH/pfinternal
-cp -r pfinternal $DEPOSIT_PATH
+rm -fr $DEPOSIT_PATH/internal
+rm -fr $DEPOSIT_PATH/commands
 
-rm -fr $DEPOSIT_PATH/pfhash
-cp -r pfhash $DEPOSIT_PATH
-
-rm -fr $DEPOSIT_PATH/pflookup
-cp -r pflookup $DEPOSIT_PATH
+cp -r internal $DEPOSIT_PATH
+cp -r commands $DEPOSIT_PATH
 
 cd $BUILD_PATH
 export GOPATH=`pwd`
 
-go get $ACCOUNT_PATH/pfhash $ACCOUNT_PATH/pflookup
-go build $ACCOUNT_PATH/pfhash $ACCOUNT_PATH/pflookup
+go get $ACCOUNT_PATH/commands/pfhash $ACCOUNT_PATH/commands/pflookup
+go build $ACCOUNT_PATH/commands/pfhash $ACCOUNT_PATH/commands/pflookup
