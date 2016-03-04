@@ -1,0 +1,12 @@
+[submodule "build/src/github.com/jessevdk/go-flags"]
+	path = build/src/github.com/jessevdk/go-flags
+	url = https://github.com/jessevdk/go-flags
+[submodule "build/src/github.com/mattn/go-colorable"]
+	path = build/src/github.com/mattn/go-colorable
+	url = https://github.com/mattn/go-colorable
+[submodule "build/src/github.com/mattn/go-sqlite3"]
+	path = build/src/github.com/mattn/go-sqlite3
+	url = https://github.com/mattn/go-sqlite3
+[submodule "build/src/gopkg.in/inconshreveable/log15.v2"]
+	path = build/src/gopkg.in/inconshreveable/log15.v2
+	url = https://gopkg.in/inconshreveable/log15.v2
