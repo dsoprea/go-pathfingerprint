@@ -75,19 +75,24 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
         panic(err)
     }
 
+    h, err = self.getHashObject()
+    if err != nil {
+        panic(err)
+    }
+
     for _, entry := range entries {
         var childHash string = ""
 
         filename := entry.Name()
-        isDir := entry.IsDir()
 
         childPath := path.Join(*scanPath, filename)
         relChildPath := path.Join(*relPath, filename)
 
-        if isDir == true {
-            var bc *Catalog
+        mode := entry.Mode()
+        if mode.IsDir() == true {
+            l.Debug("Hashing directory.", "relChildPath", relChildPath)
 
-            bc, err = existingCatalog.BranchCatalog(&filename)
+            bc, err := existingCatalog.BranchCatalog(&filename)
             if err != nil {
                 panic(err)
             }
@@ -96,7 +101,9 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
             if err != nil {
                 panic(err)
             }
-        } else {
+        } else if mode.IsRegular() == true {
+            l.Debug("Hashing regular file.", "relChildPath", relChildPath)
+
             s, err := os.Stat(childPath)
             if err != nil {
                 panic(err)
@@ -123,6 +130,24 @@ func (self *Path) GeneratePathHash(scanPath *string, relPath *string, existingCa
             } else {
                 childHash = flr.entry.hash
             }
+        } else if mode & os.ModeSymlink > 0 {
+            l.Debug("Hashing symlink.", "relChildPath", relChildPath)
+
+            targetFilepath, err := os.Readlink(childPath)
+            if err != nil {
+                panic(err)
+            }
+
+            childHash, err = getHash(h, &targetFilepath)
+            if err != nil {
+                panic(err)
+            }
+        } else {
+            l.Warn("Skipping file of unacceptable type.", 
+                "relChildPath", relChildPath, 
+                "mode", mode)
+
+            continue
         }
 
         io.WriteString(h, relChildPath)
@@ -188,7 +213,9 @@ func (self *Path) GenerateFileHash(filepath *string) (hash string, err error) {
             panic(err)
         }
 
-        h.Write(part)
+        if _, err := h.Write(part); err != nil {
+            panic(err)
+        }
     }
 
     hash = fmt.Sprintf("%x", h.Sum(nil))

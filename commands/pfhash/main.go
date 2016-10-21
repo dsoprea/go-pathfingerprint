@@ -19,10 +19,10 @@ type options struct {
     ScanPath string         `short:"s" long:"scan-path" description:"Path to scan" required:"true"`
     CatalogFilepath string  `short:"c" long:"catalog-filepath" description:"Catalog file-path (will be created if it doesn't exist)" required:"true"`
     HashAlgorithm string    `short:"h" long:"algorithm" default:"sha1" description:"Hashing algorithm (sha1, sha256)"`
-    NoUpdates bool          `short:"n" long:"no-updates" default:"false" description:"Don't update the catalog (will also prevent reporting of deletions)"`
+    NoUpdates bool          `short:"n" long:"no-updates" description:"Don't update the catalog (will also prevent reporting of deletions)"`
     ReportFilename string   `short:"R" long:"report" default:"" description:"Write a report of changed files ('-' for STDERR)"`
     ProfileFilename string  `short:"P" long:"profile" default:"" description:"Write performance profiling information"`
-    ShowDebugLogging bool   `short:"d" long:"debug-log" default:"false" description:"Show debug logging"`
+    ShowDebugLogging bool   `short:"d" long:"debug-log" description:"Show debug logging"`
 }
 
 func readOptions () *options {
@@ -30,7 +30,7 @@ func readOptions () *options {
 
     _, err := flags.Parse(&o)
     if err != nil {
-        os.Exit(1)
+        panic(err)
     }
 
     return &o
@@ -39,9 +39,6 @@ func readOptions () *options {
 func main() {
     defer func() {
         if r := recover(); r != nil {
-            err := r.(error)
-
-            fmt.Printf("ERROR: %s\n", err.Error())
             os.Exit(1)
         }
     }()

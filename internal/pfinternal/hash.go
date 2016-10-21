@@ -1,11 +1,12 @@
 package pfinternal
 
 import (
+    "crypto/sha1"
+    "crypto/sha256"
+
     "fmt"
     "errors"
     "hash"
-    "crypto/sha1"
-    "crypto/sha256"
 )
 
 const (
@@ -23,4 +24,13 @@ func getHashObject(algorithmName *string) (hash.Hash, error) {
         err := errors.New(message)
         return nil, err
     }
+}
+
+func getHash(h hash.Hash, value *string) (d string, err error) {
+    if _, err := h.Write([]byte(*value)); err != nil {
+        panic(err)
+    }
+
+    d = fmt.Sprintf("%x", h.Sum(nil))
+    return d, nil
 }
