@@ -1,19 +1,10 @@
 #!/bin/bash
 
-export BUILD_PATH=build
-export ACCOUNT_PATH=github.com/dsoprea/go-pathfingerprint
-export DEPOSIT_PATH=$BUILD_PATH/src/$ACCOUNT_PATH
+export GOPATH=`pwd`/../../../..
+COMMAND_PATH=github.com/dsoprea/go-pathfingerprint/commands
 
-mkdir -p $DEPOSIT_PATH
+mkdir -p bin
 
-rm -fr $DEPOSIT_PATH/internal
-rm -fr $DEPOSIT_PATH/commands
-
-cp -r internal $DEPOSIT_PATH
-cp -r commands $DEPOSIT_PATH
-
-cd $BUILD_PATH
-export GOPATH=`pwd`
-
-go get $ACCOUNT_PATH/commands/pfhash $ACCOUNT_PATH/commands/pflookup
-go build $ACCOUNT_PATH/commands/pfhash $ACCOUNT_PATH/commands/pflookup
+go get $COMMAND_PATH/pfhash $COMMAND_PATH/pflookup
+go build -o bin/pfhash $COMMAND_PATH/pfhash
+go build -o bin/pflookup $COMMAND_PATH/pflookup
