@@ -23,7 +23,7 @@ func NewLogger(context string) log.Logger {
     return l
 }
 
-func ConfigureRootLogger () {
+func ConfigureRootLogger() {
     sh := log.StreamHandler(colorable.NewColorableStdout(), log.TerminalFormat())
 
     logLevel := log.LvlInfo

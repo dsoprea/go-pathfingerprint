@@ -158,7 +158,7 @@ func (self *catalogResource) Open() (err error) {
 }
 
 func (self *catalogResource) createTable(db *sql.DB, tableName string, tableQuery *string) (wasCreated bool, err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     l.Debug("Attempting to create table.", "name", tableName)
 
@@ -187,7 +187,7 @@ func (self *catalogResource) createTable(db *sql.DB, tableName string, tableQuer
 }
 
 func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName string, columnName string, isAscending bool) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     l.Debug("Attempting to create index.", "name", indexName, "tableName", tableName)
 
@@ -223,7 +223,7 @@ func (self *catalogResource) createIndex(db *sql.DB, indexName string, tableName
 }
 
 func (self *catalogResource) executeInsert(db *sql.DB, query *string, args ...interface{}) (id int64, err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -253,7 +253,7 @@ func (self *catalogResource) executeInsert(db *sql.DB, query *string, args ...in
 }
 
 func (self *catalogResource) Close() (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -277,7 +277,7 @@ func (self *catalogResource) Close() (err error) {
 }
 
 func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (flr *fileLookupResult, err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -349,7 +349,7 @@ func (self *catalogResource) lookupFile(pd *pathDescriptor, filename *string) (f
 }
 
 func (self *catalogResource) lookupPath(relPath *string) (flr *pathLookupResult, err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -410,7 +410,7 @@ func (self *catalogResource) lookupPath(relPath *string) (flr *pathLookupResult,
 }
 
 func (self *catalogResource) updateLastFileCheck(flr *fileLookupResult, nowEpoch int64) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -455,7 +455,7 @@ func (self *catalogResource) updateLastFileCheck(flr *fileLookupResult, nowEpoch
 }
 
 func (self *catalogResource) updateLastPathCheck(plr *pathLookupResult, nowEpoch int64) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -502,7 +502,7 @@ func (self *catalogResource) updateLastPathCheck(plr *pathLookupResult, nowEpoch
 }
 
 func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *string, nowEpoch int64) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -578,7 +578,7 @@ func (self *catalogResource) setFile(flr *fileLookupResult, mtime int64, hash *s
 }
 
 func (self *catalogResource) createPath(relPath *string, nowEpoch int64) (id int, err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -610,7 +610,7 @@ func (self *catalogResource) createPath(relPath *string, nowEpoch int64) (id int
 }
 
 func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -661,7 +661,7 @@ func (self *catalogResource) updatePath(pd *pathDescriptor, hash *string) (err e
 // (because all of the ones that match known files have been updated to a later 
 // timestamp than they had).
 func (self *catalogResource) pushOldFiles(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -728,7 +728,7 @@ func (self *catalogResource) pushOldFiles(nowEpoch int64, c chan<- *ChangeEvent)
 // (because all of the ones that match known files have been updated to a later 
 // timestamp than they had).
 func (self *catalogResource) pushOldPaths(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -789,7 +789,7 @@ func (self *catalogResource) pushOldPaths(nowEpoch int64, c chan<- *ChangeEvent)
 // ones that match known files have been updated to a later timestamp than they 
 // had).
 func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -831,7 +831,7 @@ func (self *catalogResource) pruneOldFiles(nowEpoch int64, c chan<- *ChangeEvent
 }
 
 func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent) (err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -873,7 +873,7 @@ func (self *catalogResource) pruneOldPaths(nowEpoch int64, c chan<- *ChangeEvent
 }
 
 func (self *catalogResource) getLastPathHash(relPath *string) (hp *string, err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
@@ -927,7 +927,7 @@ type resolveResult struct {
 }
 
 func (self *catalogResource) ResolvePath(relPath *string) (rr *resolveResult, err error) {
-    l := NewLogger("catalog-resource")
+    l := NewLogger("catalog_resource")
 
     defer func() {
         if r := recover(); r != nil {
